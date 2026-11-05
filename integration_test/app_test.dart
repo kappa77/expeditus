@@ -62,6 +62,19 @@ void main() {
     expect(find.text('Video B uno'), findsOneWidget);
     expect(find.text('Video A uno'), findsNothing);
 
+    // RSS history keeps every feed video once, even after a refresh.
+    expect(harness.state.rssHistoryCount, 3);
+    await harness.state.refresh(force: true);
+    await tester.pumpAndSettle();
+    expect(harness.state.rssHistoryCount, 3);
+    await tester.tap(find.byKey(const Key('nav-rss-history')));
+    await tester.pumpAndSettle();
+    expect(find.text('Video A uno'), findsOneWidget);
+    expect(find.text('Video A due'), findsOneWidget);
+    expect(find.text('Video B uno'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('nav-latest')));
+    await tester.pumpAndSettle();
+
     // Local search only searches the subscriptions we have.
     await tester.enterText(
       find.byKey(const Key('search-field')),
@@ -223,10 +236,24 @@ void main() {
     await tester.tap(find.byKey(const Key('channel-filter-all')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('channel-mute-rss')));
+    await _pumpUntil(
+      tester,
+      () => harness.state.channels
+          .firstWhere((channel) => channel.id == _channelA)
+          .muted,
+      reason: 'il flag Silenzia RSS deve essere applicato',
+    );
     await tester.pump();
     expect(find.byKey(const Key('channel-video-aa2')), findsNothing);
     expect(find.byKey(const Key('channel-video-aa1')), findsOneWidget);
     await tester.tap(find.byKey(const Key('channel-mute-rss')));
+    await _pumpUntil(
+      tester,
+      () => !harness.state.channels
+          .firstWhere((channel) => channel.id == _channelA)
+          .muted,
+      reason: 'il flag Silenzia RSS deve essere rimosso',
+    );
     await tester.pump();
     expect(find.byKey(const Key('channel-video-aa2')), findsOneWidget);
 

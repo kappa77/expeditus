@@ -80,11 +80,11 @@ SQLite database: `expeditus.sqlite`, in the application support directory.
 Tables:
 
 - `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, optional default playback rate, last error.
-- `videos`: id, channel, title, description, publication time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag.
+- `videos`: id, channel, title, description, publication time, first-seen time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
 - `bookmarks`: id, video id, position seconds, personal note, creation time.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. All use `ALTER TABLE` migrations.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. All use `ALTER TABLE` migrations.
 
 ## Playback and ad avoidance
 
@@ -104,6 +104,10 @@ SponsorBlock segments are fetched from `sponsor.ajay.app` and skipped during pla
 Chapters are parsed from the video description with timestamp lines such as `00:00 Intro` (at least two entries). If the stored description has no chapters, the player fetches the full description with `youtube_explode_dart` and caches the parsed chapters in `videos.chapters`. The outline dialog lists chapters and personal bookmarks; both jump to their timestamp.
 
 Bookmarks are stored in the `bookmarks` table with a second offset and a free-form personal note. They can be added from the outline dialog or from the player AppBar at the current position; they are local only and are deleted with their video row.
+
+### RSS history
+
+`rssHistory()` lists every video ever received from an RSS feed, ordered by first-seen time. `videos.id` is the primary key, so repeated feed refreshes update the existing row instead of creating duplicates; `first_seen_at` is preserved on conflict. Link-only imports are marked `source = 'link'` and excluded from this view. If a link-only video later appears in the RSS feed, its source is upgraded to `rss`.
 
 ### Per-channel refresh
 
@@ -223,6 +227,7 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - The fallback muxed stream is limited to 360p; HLS is used when available. 1080p/4K would require an optional yt-dlp/ffmpeg resolver.
 - Tags are not available for every video and cost one watch-page request per uncached video.
 - Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
+- RSS history keeps one row per video id; it is not a log of every feed refresh. The current feed view still shows only the latest entry per channel.
 - Chapters depend on timestamps in the description; videos without timestamped descriptions have no chapters. The outline captures the playback position when it is opened for new bookmarks.
 - Channel history records the first time a video was opened or marked watched; toggling watched off does not erase the history entry.
 - Shorts and live streams are not filtered separately.

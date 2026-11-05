@@ -51,6 +51,7 @@ class AppState extends ChangeNotifier {
   List<VideoItem> latest = [];
   List<VideoItem> queueItems = [];
   List<VideoItem> saved = [];
+  List<VideoItem> rssHistory = [];
   List<VideoItem> visible = [];
   final Map<String, double> downloadProgress = {};
 
@@ -84,6 +85,7 @@ class AppState extends ChangeNotifier {
   int get queueCount => queueItems.length;
   int get latestCount => latest.length;
   int get savedCount => saved.length;
+  int get rssHistoryCount => rssHistory.length;
 
   VideoItem? get selectedVideo {
     if (visible.isEmpty) return null;
@@ -125,6 +127,7 @@ class AppState extends ChangeNotifier {
     latest = await db.latestPerChannel();
     queueItems = await db.queue();
     saved = await db.downloadedVideos();
+    rssHistory = await db.rssHistory();
     _applyFilter();
     _notify();
   }
@@ -164,6 +167,8 @@ class AppState extends ChangeNotifier {
         source = queueItems;
       case 'saved':
         source = saved;
+      case 'rss':
+        source = rssHistory;
       default:
         source = latest;
     }

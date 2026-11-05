@@ -27,6 +27,7 @@ One row per channel. The latest video. That is the whole feed.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
 - **Playback speed** from 0.25× to 3.50× in 0.25 steps, with an optional default speed per channel.
 - **Chapters and timestamped bookmarks:** jump to description chapters or save a bookmark at the current second with a personal note.
+- **RSS history:** every video ever seen in a feed is kept once, even after it leaves the current 15-item feed.
 - **Refresh only one channel** from its page, without waiting for the whole subscription feed.
 - **±10 second seeking** with debounce: several quick presses become one combined jump.
 - **Keyboard-first:** move, open, mark watched, queue, search, and refresh without touching the mouse.

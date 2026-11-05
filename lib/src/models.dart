@@ -62,6 +62,7 @@ class VideoItem {
     required this.title,
     required this.description,
     required this.publishedAt,
+    this.firstSeenAt,
     this.durationSeconds,
     this.status = 'new',
     this.queued = false,
@@ -75,6 +76,7 @@ class VideoItem {
     this.downloadError,
     this.chapters = const [],
     this.chaptersFetched = false,
+    this.source = 'rss',
   });
 
   final String id;
@@ -85,6 +87,9 @@ class VideoItem {
 
   /// Milliseconds since epoch.
   final int publishedAt;
+
+  /// When this video first entered the local feed history.
+  final int? firstSeenAt;
 
   final int? durationSeconds;
 
@@ -114,6 +119,9 @@ class VideoItem {
   /// True once a chapter lookup has been attempted and stored.
   final bool chaptersFetched;
 
+  /// `rss` or `link`. Link-only videos are not part of the RSS history.
+  final String source;
+
   bool get isDownloaded => localPath != null && downloadStatus == 'ready';
   bool get isDownloading => downloadStatus == 'downloading';
 
@@ -129,6 +137,7 @@ class VideoItem {
     String? title,
     String? description,
     int? publishedAt,
+    int? firstSeenAt,
     int? durationSeconds,
     String? status,
     bool? queued,
@@ -142,6 +151,7 @@ class VideoItem {
     String? downloadError,
     List<VideoChapter>? chapters,
     bool? chaptersFetched,
+    String? source,
   }) {
     return VideoItem(
       id: id,
@@ -150,6 +160,7 @@ class VideoItem {
       title: title ?? this.title,
       description: description ?? this.description,
       publishedAt: publishedAt ?? this.publishedAt,
+      firstSeenAt: firstSeenAt ?? this.firstSeenAt,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       status: status ?? this.status,
       queued: queued ?? this.queued,
@@ -163,6 +174,7 @@ class VideoItem {
       downloadError: downloadError ?? this.downloadError,
       chapters: chapters ?? this.chapters,
       chaptersFetched: chaptersFetched ?? this.chaptersFetched,
+      source: source ?? this.source,
     );
   }
 
@@ -174,6 +186,9 @@ class VideoItem {
       title: (map['title'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
       publishedAt: (map['published_at'] as int?) ?? 0,
+      firstSeenAt: (map['first_seen_at'] as int?) ??
+          (map['published_at'] as int?) ??
+          0,
       durationSeconds: map['duration_seconds'] as int?,
       status: (map['status'] as String?) ?? 'new',
       queued: (map['queued'] as int?) == 1,
@@ -187,6 +202,7 @@ class VideoItem {
       downloadError: map['download_error'] as String?,
       chapters: _parseChapters(map['chapters']),
       chaptersFetched: (map['chapters_fetched'] as int?) == 1,
+      source: (map['source'] as String?) ?? 'rss',
     );
   }
 

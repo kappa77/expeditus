@@ -44,6 +44,7 @@ class VideoLinkService {
         keywords: keywords,
         keywordsFetched: true,
         queued: true,
+        source: 'link',
       ),
     );
   }

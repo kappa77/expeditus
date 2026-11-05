@@ -27,7 +27,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 5,
+        version: 6,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -53,6 +53,7 @@ class AppDatabase {
               title TEXT NOT NULL,
               description TEXT NOT NULL DEFAULT '',
               published_at INTEGER NOT NULL,
+              first_seen_at INTEGER,
               duration_seconds INTEGER,
               status TEXT NOT NULL DEFAULT 'new',
               queued INTEGER NOT NULL DEFAULT 0,
@@ -67,6 +68,7 @@ class AppDatabase {
               download_error TEXT,
               chapters TEXT,
               chapters_fetched INTEGER NOT NULL DEFAULT 0,
+              source TEXT NOT NULL DEFAULT 'rss',
               FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
             )
           ''');
@@ -132,6 +134,15 @@ class AppDatabase {
                 FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
               )
             ''');
+          }
+          if (oldVersion < 6) {
+            await db.execute('ALTER TABLE videos ADD COLUMN first_seen_at INTEGER');
+            await db.execute(
+              "ALTER TABLE videos ADD COLUMN source TEXT NOT NULL DEFAULT 'rss'",
+            );
+            await db.execute(
+              'UPDATE videos SET first_seen_at = COALESCE(fetched_at, published_at, 0) WHERE first_seen_at IS NULL',
+            );
           }
         },
       ),
@@ -243,16 +254,20 @@ class AppDatabase {
     await db.rawInsert(
       '''
       INSERT INTO videos (
-        id, channel_id, title, description, published_at,
-        duration_seconds, status, queued, progress_seconds, fetched_at
+        id, channel_id, title, description, published_at, first_seen_at,
+        duration_seconds, status, queued, progress_seconds, fetched_at, source
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
         published_at = excluded.published_at,
         duration_seconds = COALESCE(excluded.duration_seconds, videos.duration_seconds),
-        fetched_at = excluded.fetched_at
+        fetched_at = excluded.fetched_at,
+        source = CASE
+          WHEN excluded.source = 'rss' THEN 'rss'
+          ELSE videos.source
+        END
       ''',
       [
         video.id,
@@ -260,11 +275,13 @@ class AppDatabase {
         video.title,
         video.description,
         video.publishedAt,
+        video.firstSeenAt ?? DateTime.now().millisecondsSinceEpoch,
         video.durationSeconds,
         video.status,
         video.queued ? 1 : 0,
         video.progressSeconds,
         DateTime.now().millisecondsSinceEpoch,
+        video.source,
       ],
     );
   }
@@ -290,6 +307,20 @@ class AppDatabase {
       AND c.muted = 0
       AND c.show_in_latest = 1
       ORDER BY v.published_at DESC
+    ''');
+    return rows.map(VideoItem.fromMap).toList();
+  }
+
+  /// All videos ever seen in the feeds, newest first, one row per video id.
+  Future<List<VideoItem>> rssHistory() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT v.*, c.title AS channel_title
+      FROM videos v
+      JOIN channels c ON c.id = v.channel_id
+      WHERE v.source = 'rss'
+      ORDER BY COALESCE(v.first_seen_at, v.published_at) DESC,
+               v.published_at DESC
     ''');
     return rows.map(VideoItem.fromMap).toList();
   }

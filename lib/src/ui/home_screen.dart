@@ -367,6 +367,14 @@ class _Sidebar extends StatelessWidget {
             selected: state.view == 'saved',
             onTap: () => onSelect('saved'),
           ),
+          _NavItem(
+            key: const Key('nav-rss-history'),
+            label: 'Storico RSS',
+            icon: Icons.history_rounded,
+            count: state.rssHistoryCount,
+            selected: state.view == 'rss',
+            onTap: () => onSelect('rss'),
+          ),
           const SizedBox(height: 10),
           const Divider(),
           const SizedBox(height: 10),
@@ -522,6 +530,7 @@ class _Header extends StatelessWidget {
       'new' => 'Nuovi',
       'queue' => 'Coda',
       'saved' => 'Salvati',
+      'rss' => 'Storico RSS',
       'channels' => 'Canali',
       _ => 'Ultimi',
     };
@@ -529,6 +538,7 @@ class _Header extends StatelessWidget {
       'new' => '${state.visible.length} video da vedere',
       'queue' => '${state.queueCount} video in coda',
       'saved' => '${state.savedCount} video offline',
+      'rss' => '${state.rssHistoryCount} video visti nel feed',
       'channels' => '${state.channels.length} iscrizioni',
       _ => '${state.latestCount} canali · ${state.newCount} nuovi',
     };
@@ -561,7 +571,9 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
-          if (state.newCount > 0 && state.view != 'channels') ...[
+          if (state.newCount > 0 &&
+              state.view != 'channels' &&
+              state.view != 'rss') ...[
             TextButton(
               onPressed: onMarkAllSeen,
               child: const Text('Segna letti'),
@@ -703,7 +715,9 @@ class _EmptyState extends StatelessWidget {
             ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
             : state.view == 'saved'
                 ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
-                : 'Nessun nuovo video dai canali che segui.';
+                : state.view == 'rss'
+                    ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
+                    : 'Nessun nuovo video dai canali che segui.';
 
     return Center(
       child: ConstrainedBox(
