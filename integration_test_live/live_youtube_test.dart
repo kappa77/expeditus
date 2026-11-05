@@ -46,6 +46,7 @@ void main() {
       });
 
       await state.init();
+      await state.completeOnboarding();
       await tester.pumpWidget(ExpeditusApp(state: state));
       await tester.pumpAndSettle();
 
@@ -103,6 +104,59 @@ void main() {
   );
 
   testWidgets(
+    '@antirez: link video, iscrizione automatica e coda',
+    (tester) async {
+      final temp = await Directory.systemTemp.createTemp('expeditus_link_');
+      final db = AppDatabase(pathOverride: p.join(temp.path, 'expeditus.sqlite'));
+      await db.open();
+      final state = AppState(db);
+      addTearDown(() async {
+        state.dispose();
+        await db.close();
+        if (await temp.exists()) await temp.delete(recursive: true);
+      });
+
+      await state.init();
+      await state.completeOnboarding();
+      await tester.pumpWidget(ExpeditusApp(state: state));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('import-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Link video'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('video-link-field')),
+        'https://www.youtube.com/watch?v=q7WfJF_Owlk',
+      );
+      await tester.tap(find.byKey(const Key('video-link-submit')));
+
+      await _pumpUntil(
+        tester,
+        () => state.channels.any(
+          (channel) => channel.id == 'UCDDG9vOcmgwlslJJpCWjqOg',
+        ),
+        timeout: const Duration(seconds: 60),
+        reason: 'il canale del video deve essere aggiunto',
+      );
+      await _pumpUntil(
+        tester,
+        () => state.queueItems.any((video) => video.id == 'q7WfJF_Owlk'),
+        timeout: const Duration(seconds: 60),
+        reason: 'il video del link deve finire in coda',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        state.channels.any(
+          (channel) => channel.id == 'UCDDG9vOcmgwlslJJpCWjqOg',
+        ),
+        isTrue,
+      );
+    },
+    skip: !_runLive,
+  );
+
+  testWidgets(
     '@antirez: ricerca canale per parola e aggiunta',
     (tester) async {
       final temp = await Directory.systemTemp.createTemp('expeditus_search_');
@@ -116,6 +170,7 @@ void main() {
       });
 
       await state.init();
+      await state.completeOnboarding();
       await tester.pumpWidget(ExpeditusApp(state: state));
       await tester.pumpAndSettle();
 

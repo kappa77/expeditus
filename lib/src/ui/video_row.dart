@@ -172,6 +172,15 @@ class _VideoRowState extends State<VideoRow> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    if (video.isDownloaded)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 3),
+                        child: Icon(
+                          Icons.download_done_rounded,
+                          size: 14,
+                          color: ExpeditusColors.green,
+                        ),
+                      ),
                     if (video.queued)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 4),

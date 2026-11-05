@@ -27,7 +27,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -58,6 +58,11 @@ class AppDatabase {
               fetched_at INTEGER NOT NULL,
               keywords TEXT,
               keywords_fetched INTEGER NOT NULL DEFAULT 0,
+              watched_at INTEGER,
+              local_path TEXT,
+              download_status TEXT NOT NULL DEFAULT 'none',
+              downloaded_at INTEGER,
+              download_error TEXT,
               FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
             )
           ''');
@@ -80,6 +85,15 @@ class AppDatabase {
             await db.execute(
               'ALTER TABLE videos ADD COLUMN keywords_fetched INTEGER NOT NULL DEFAULT 0',
             );
+          }
+          if (oldVersion < 3) {
+            await db.execute('ALTER TABLE videos ADD COLUMN watched_at INTEGER');
+            await db.execute('ALTER TABLE videos ADD COLUMN local_path TEXT');
+            await db.execute(
+              "ALTER TABLE videos ADD COLUMN download_status TEXT NOT NULL DEFAULT 'none'",
+            );
+            await db.execute('ALTER TABLE videos ADD COLUMN downloaded_at INTEGER');
+            await db.execute('ALTER TABLE videos ADD COLUMN download_error TEXT');
           }
         },
       ),
@@ -244,11 +258,17 @@ class AppDatabase {
     return rows.map(VideoItem.fromMap).toList();
   }
 
-  Future<void> setStatus(String videoId, String status) async {
+  Future<void> setStatus(
+    String videoId,
+    String status, {
+    int? watchedAt,
+  }) async {
     final db = await database;
+    final values = <String, Object?>{'status': status};
+    if (watchedAt != null) values['watched_at'] = watchedAt;
     await db.update(
       'videos',
-      {'status': status},
+      values,
       where: 'id = ?',
       whereArgs: [videoId],
     );
@@ -269,6 +289,60 @@ class AppDatabase {
     await db.update(
       'videos',
       {'progress_seconds': seconds},
+      where: 'id = ?',
+      whereArgs: [videoId],
+    );
+  }
+
+  Future<List<VideoItem>> historyForChannel(String channelId) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT v.*, c.title AS channel_title
+      FROM videos v
+      JOIN channels c ON c.id = v.channel_id
+      WHERE v.channel_id = ? AND v.watched_at IS NOT NULL
+      ORDER BY v.watched_at DESC
+      ''',
+      [channelId],
+    );
+    return rows.map(VideoItem.fromMap).toList();
+  }
+
+  Future<List<VideoItem>> downloadedVideos() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT v.*, c.title AS channel_title
+      FROM videos v
+      JOIN channels c ON c.id = v.channel_id
+      WHERE v.local_path IS NOT NULL AND v.download_status = 'ready'
+      ORDER BY v.downloaded_at DESC
+    ''');
+    return rows.map(VideoItem.fromMap).toList();
+  }
+
+  Future<void> setDownload(
+    String videoId, {
+    required String status,
+    String? localPath,
+    String? error,
+    int? downloadedAt,
+  }) async {
+    final db = await database;
+    final values = <String, Object?>{
+      'download_status': status,
+      'download_error': error,
+    };
+    if (status == 'none') {
+      values['local_path'] = null;
+      values['downloaded_at'] = null;
+    } else {
+      if (localPath != null) values['local_path'] = localPath;
+      if (downloadedAt != null) values['downloaded_at'] = downloadedAt;
+    }
+    await db.update(
+      'videos',
+      values,
       where: 'id = ?',
       whereArgs: [videoId],
     );

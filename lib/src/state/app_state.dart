@@ -8,6 +8,8 @@ import '../models.dart';
 import '../services/import_service.dart';
 import '../services/rss_service.dart';
 import '../services/sponsorblock_service.dart';
+import '../services/video_download_service.dart';
+import '../services/video_link_service.dart';
 import '../services/video_tags_service.dart';
 
 double _snapPlaybackRate(double value) {
@@ -23,21 +25,29 @@ class AppState extends ChangeNotifier {
     YouTubeResolver? resolver,
     SponsorBlockService? sponsorBlock,
     VideoTagsProvider? tags,
+    VideoDownloader? downloader,
+    VideoLinkService? videoLink,
   })  : rss = rss ?? RssService(),
         resolver = resolver ?? YouTubeResolver(),
         sponsorBlock = sponsorBlock ?? SponsorBlockService(),
-        tags = tags ?? VideoTagsService();
+        tags = tags ?? VideoTagsService(),
+        downloader = downloader ?? VideoDownloadService(),
+        videoLink = videoLink ?? VideoLinkService();
 
   final AppDatabase db;
   final RssService rss;
   final YouTubeResolver resolver;
   final SponsorBlockService sponsorBlock;
   final VideoTagsProvider tags;
+  final VideoDownloader downloader;
+  final VideoLinkService videoLink;
 
   List<Channel> channels = [];
   List<VideoItem> latest = [];
   List<VideoItem> queueItems = [];
+  List<VideoItem> saved = [];
   List<VideoItem> visible = [];
+  final Map<String, double> downloadProgress = {};
 
   String view = 'latest';
   String search = '';
@@ -53,6 +63,7 @@ class AppState extends ChangeNotifier {
   Set<String> sponsorCategories = {'sponsor', 'selfpromo'};
   int refreshMinutes = 30;
   double playbackRate = 1.0;
+  bool onboardingSeen = false;
 
   bool importing = false;
   String? importStatus;
@@ -62,10 +73,12 @@ class AppState extends ChangeNotifier {
   bool _disposed = false;
   final Set<String> _seenInSession = {};
   final Set<String> _watchedInSession = {};
+  final Set<String> _downloadsInProgress = {};
 
   int get newCount => latest.where((video) => video.isNew).length;
   int get queueCount => queueItems.length;
   int get latestCount => latest.length;
+  int get savedCount => saved.length;
 
   VideoItem? get selectedVideo {
     if (visible.isEmpty) return null;
@@ -82,6 +95,7 @@ class AppState extends ChangeNotifier {
     playbackRate = _snapPlaybackRate(
       double.tryParse(settings['playbackRate'] ?? '') ?? 1.0,
     );
+    onboardingSeen = settings['onboardingSeen'] == '1';
     final rawCategories = settings['sponsorCategories'];
     if (rawCategories != null) {
       try {
@@ -105,6 +119,7 @@ class AppState extends ChangeNotifier {
     channels = await db.getChannels();
     latest = await db.latestPerChannel();
     queueItems = await db.queue();
+    saved = await db.downloadedVideos();
     _applyFilter();
     _notify();
   }
@@ -142,6 +157,8 @@ class AppState extends ChangeNotifier {
         source = latest.where((video) => video.isNew);
       case 'queue':
         source = queueItems;
+      case 'saved':
+        source = saved;
       default:
         source = latest;
     }
@@ -255,6 +272,7 @@ class AppState extends ChangeNotifier {
       Channel(id: channel.id, title: channel.title, addedAt: now),
     );
     await reload();
+    await completeOnboarding();
 
     while (refreshing && !_disposed) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -286,21 +304,35 @@ class AppState extends ChangeNotifier {
   Future<void> markSeen(VideoItem video) async {
     if (!video.isNew || _seenInSession.contains(video.id)) return;
     _seenInSession.add(video.id);
-    await db.setStatus(video.id, 'seen');
+    await db.setStatus(
+      video.id,
+      'seen',
+      watchedAt: DateTime.now().millisecondsSinceEpoch,
+    );
     await reload();
   }
 
   Future<void> markWatched(VideoItem video) async {
     if (video.isWatched || _watchedInSession.contains(video.id)) return;
     _watchedInSession.add(video.id);
-    await db.setStatus(video.id, 'watched');
+    await db.setStatus(
+      video.id,
+      'watched',
+      watchedAt: DateTime.now().millisecondsSinceEpoch,
+    );
     await reload();
   }
 
   Future<void> toggleWatched(VideoItem video) async {
     _watchedInSession.remove(video.id);
     final next = video.isWatched ? 'seen' : 'watched';
-    await db.setStatus(video.id, next);
+    await db.setStatus(
+      video.id,
+      next,
+      watchedAt: next == 'watched'
+          ? DateTime.now().millisecondsSinceEpoch
+          : null,
+    );
     await reload();
   }
 
@@ -310,9 +342,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markAllSeen() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
     for (final video in latest.where((video) => video.isNew).toList()) {
       _seenInSession.add(video.id);
-      await db.setStatus(video.id, 'seen');
+      await db.setStatus(video.id, 'seen', watchedAt: now);
     }
     await reload();
   }
@@ -390,6 +423,8 @@ class AppState extends ChangeNotifier {
     _notify();
 
     if (parsed.isNotEmpty) {
+      await completeOnboarding();
+
       while (refreshing && !_disposed) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
@@ -441,8 +476,75 @@ class AppState extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> completeOnboarding() async {
+    if (onboardingSeen) return;
+    onboardingSeen = true;
+    await db.setSetting('onboardingSeen', '1');
+    _notify();
+  }
+
+  Future<void> downloadVideo(VideoItem video) async {
+    if (video.isDownloaded || _downloadsInProgress.contains(video.id)) {
+      return;
+    }
+    _downloadsInProgress.add(video.id);
+    downloadProgress[video.id] = 0;
+    await db.setDownload(video.id, status: 'downloading');
+    _notify();
+
+    try {
+      final path = await downloader.download(
+        video.id,
+        onProgress: (progress) {
+          downloadProgress[video.id] = progress;
+          _notify();
+        },
+      );
+      await db.setDownload(
+        video.id,
+        status: 'ready',
+        localPath: path,
+        downloadedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      await reload();
+    } catch (e) {
+      await db.setDownload(
+        video.id,
+        status: 'error',
+        error: _shortError(e),
+      );
+      await reload();
+    } finally {
+      _downloadsInProgress.remove(video.id);
+      downloadProgress.remove(video.id);
+      _notify();
+    }
+  }
+
+  Future<void> deleteDownload(VideoItem video) async {
+    final path = video.localPath;
+    if (path != null) {
+      await downloader.delete(path);
+    }
+    await db.setDownload(video.id, status: 'none');
+    await reload();
+  }
+
+  Future<LinkedVideo> importVideoLink(String input) async {
+    final linked = await videoLink.resolve(input);
+    await addChannel(linked.channel);
+    await db.upsertVideo(linked.video);
+    await db.setQueued(linked.video.id, true);
+    await reload();
+    return linked;
+  }
+
   Future<List<VideoItem>> channelVideos(String channelId) {
     return db.videosForChannel(channelId);
+  }
+
+  Future<List<VideoItem>> channelHistory(String channelId) {
+    return db.historyForChannel(channelId);
   }
 
   /// Fetches tags for one video and caches them. Failures are non-fatal.
@@ -485,6 +587,8 @@ class AppState extends ChangeNotifier {
     resolver.close();
     sponsorBlock.close();
     tags.close();
+    downloader.close();
+    videoLink.close();
     super.dispose();
   }
 }

@@ -60,6 +60,11 @@ class VideoItem {
     this.progressSeconds = 0,
     this.keywords = const [],
     this.keywordsFetched = false,
+    this.watchedAt,
+    this.localPath,
+    this.downloadStatus = 'none',
+    this.downloadedAt,
+    this.downloadError,
   });
 
   final String id;
@@ -85,6 +90,17 @@ class VideoItem {
   /// True once a tag fetch has been attempted and stored, even if empty.
   final bool keywordsFetched;
 
+  /// Milliseconds since epoch, set the first time the video is opened/watched.
+  final int? watchedAt;
+
+  final String? localPath;
+  final String downloadStatus;
+  final int? downloadedAt;
+  final String? downloadError;
+
+  bool get isDownloaded => localPath != null && downloadStatus == 'ready';
+  bool get isDownloading => downloadStatus == 'downloading';
+
   bool get isNew => status == 'new';
   bool get isWatched => status == 'watched';
   bool get isSeen => status == 'seen' || status == 'watched';
@@ -103,6 +119,11 @@ class VideoItem {
     int? progressSeconds,
     List<String>? keywords,
     bool? keywordsFetched,
+    int? watchedAt,
+    String? localPath,
+    String? downloadStatus,
+    int? downloadedAt,
+    String? downloadError,
   }) {
     return VideoItem(
       id: id,
@@ -117,6 +138,11 @@ class VideoItem {
       progressSeconds: progressSeconds ?? this.progressSeconds,
       keywords: keywords ?? this.keywords,
       keywordsFetched: keywordsFetched ?? this.keywordsFetched,
+      watchedAt: watchedAt ?? this.watchedAt,
+      localPath: localPath ?? this.localPath,
+      downloadStatus: downloadStatus ?? this.downloadStatus,
+      downloadedAt: downloadedAt ?? this.downloadedAt,
+      downloadError: downloadError ?? this.downloadError,
     );
   }
 
@@ -134,6 +160,11 @@ class VideoItem {
       progressSeconds: (map['progress_seconds'] as int?) ?? 0,
       keywords: _parseKeywords(map['keywords']),
       keywordsFetched: (map['keywords_fetched'] as int?) == 1,
+      watchedAt: map['watched_at'] as int?,
+      localPath: map['local_path'] as String?,
+      downloadStatus: (map['download_status'] as String?) ?? 'none',
+      downloadedAt: map['downloaded_at'] as int?,
+      downloadError: map['download_error'] as String?,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -102,13 +103,30 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _open() async {
     try {
-      final resolve = widget.resolver ?? StreamResolver.resolve;
-      final stream = await resolve(widget.video.id);
+      Uri? mediaUri;
+      String? quality;
+
+      final localPath = widget.video.localPath;
+      if (localPath != null) {
+        final localFile = File(localPath);
+        if (await localFile.exists()) {
+          mediaUri = Uri.file(localFile.path);
+          quality = 'Offline';
+        }
+      }
+
+      if (mediaUri == null) {
+        final resolve = widget.resolver ?? StreamResolver.resolve;
+        final stream = await resolve(widget.video.id);
+        mediaUri = stream.url;
+        quality = stream.quality;
+      }
+
       if (!mounted) return;
-      _quality = stream.quality;
+      _quality = quality;
       final controller = VideoController(_player);
       _controller = controller;
-      await _player.open(Media(stream.url.toString()), play: true);
+      await _player.open(Media(mediaUri.toString()), play: true);
       if (!mounted) return;
       await _player.setRate(_rate);
       setState(() => _ready = true);

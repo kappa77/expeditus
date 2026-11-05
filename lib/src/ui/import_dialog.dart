@@ -5,6 +5,7 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'channel_search_tab.dart';
+import 'video_link_tab.dart';
 
 class ImportDialog extends StatefulWidget {
   const ImportDialog({super.key, required this.state, this.initialTab = 0});
@@ -25,8 +26,8 @@ class _ImportDialogState extends State<ImportDialog>
   void initState() {
     super.initState();
     _tabs = TabController(
-      length: 3,
-      initialIndex: widget.initialTab.clamp(0, 2).toInt(),
+      length: 4,
+      initialIndex: widget.initialTab.clamp(0, 3).toInt(),
       vsync: this,
     );
   }
@@ -119,6 +120,7 @@ class _ImportDialogState extends State<ImportDialog>
                       Tab(text: 'File Takeout'),
                       Tab(text: 'Incolla canali'),
                       Tab(text: 'Cerca canale'),
+                      Tab(text: 'Link video'),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -135,6 +137,7 @@ class _ImportDialogState extends State<ImportDialog>
                             onSubmit: _pasteImport,
                           ),
                           ChannelSearchTab(state: widget.state),
+                          VideoLinkTab(state: widget.state),
                         ],
                       ),
                     ),

@@ -43,6 +43,8 @@ Key modules:
 | `lib/src/services/import_service.dart` | Google Takeout CSV and channel handle/URL resolution |
 | `lib/src/services/channel_search_service.dart` | YouTube channel search by keyword |
 | `lib/src/services/video_tags_service.dart` | Lazy `videoDetails.keywords` fetch |
+| `lib/src/services/video_download_service.dart` | Muxed-stream download to the local app data folder |
+| `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
 | `lib/src/services/stream_resolver.dart` | Direct media stream resolution |
 | `lib/src/services/sponsorblock_service.dart` | SponsorBlock segment lookup |
 | `lib/src/util/seek_accumulator.dart` | Debounced compound seeking |
@@ -75,20 +77,43 @@ SQLite database: `expeditus.sqlite`, in the application support directory.
 Tables:
 
 - `channels`: id, title, handle, added time, last check, muted flag, last error.
-- `videos`: id, channel, title, description, publication time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag.
+- `videos`: id, channel, title, description, publication time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched` with an `ALTER TABLE` migration.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Both use `ALTER TABLE` migrations.
 
 ## Playback and ad avoidance
 
 Expeditus does not load the YouTube web player. `youtube_explode_dart` resolves a direct media URL, and `media_kit` plays it with libmpv. Because the ad-serving player is not used, player ads and end-screen recommendations are not part of the experience.
+
+When a video has a local download, the player opens the local file and labels the stream **Offline**; otherwise it resolves a direct URL. SponsorBlock segments are still fetched when available.
 
 SponsorBlock segments are fetched from `sponsor.ajay.app` and skipped during playback. The player also supports:
 
 - playback speed from 0.25× to 3.50× in 0.25 steps, persisted in `settings`;
 - `±10 s` seeking with a 300 ms debounce, so rapid presses compound into one seek;
 - keyboard shortcuts `←` / `→` and `J` / `L` while the player is open.
+
+### Channel page
+
+The channel page has two tabs:
+
+- **Video** — the stored archive (up to 50 videos from the database, newest first), with filters and search.
+- **Cronologia** — every video opened or marked watched for that channel, ordered by `watched_at` and grouped by watched month.
+
+The **Silenzia RSS** action uses the existing channel `muted` flag: Expeditus stops refreshing that feed and removes the channel from the main latest feed, while the archive and history stay accessible. Unmuting resumes normal refreshes.
+
+### Offline downloads
+
+The download action in the channel page saves the best **muxed** stream to `downloads/<videoId>.mp4` in the application support directory. Muxed streams are single-file and need no ffmpeg, but YouTube usually limits them to 360p. Downloads are tracked in SQLite; the **Salvati** view lists ready files and the player prefers the local file when present. Removing a download deletes the file and clears the metadata. There is no download queue, resume, or cancellation yet.
+
+### Video links and automatic subscription
+
+The import dialog has a **Link video** tab. It resolves a YouTube watch/short URL with `youtube_explode_dart`, reads the channel ID and video metadata, subscribes to the channel, stores the video, and sets it as queued. This works even when the video is older than the channel's current RSS window.
+
+### First run
+
+On a fresh profile (`onboardingSeen` not set, no channels), the root gate shows a welcome screen with a short explanation and the channel search tab. Adding a channel, importing subscriptions, or choosing **Salta per ora** completes onboarding; the flag is persisted in `settings`.
 
 YouTube is experimenting with server-side ad insertion (SSAI), where ads are stitched into the stream itself. This is a long-term risk for any direct-stream client.
 
@@ -163,10 +188,11 @@ The app footer reads `kAppVersion` from `lib/src/version.dart`, with a developme
 # Unit tests: RSS, CSV Takeout, resolver, seek accumulator
 flutter test
 
-# Deterministic desktop E2E: import, feed, channel archive, tags, filters, player error, speed
+# Deterministic desktop E2E: onboarding, import, feed, channel archive/history,
+# tags, filters, offline download, player error, speed
 flutter test integration_test -d windows
 
-# Live network E2E against @antirez
+# Live network E2E: @antirez feed, channel search, video link + auto-subscribe
 flutter test integration_test_live/live_youtube_test.dart -d windows --dart-define=RUN_LIVE_TESTS=true
 ```
 
@@ -175,6 +201,8 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - RSS exposes at most 15 uploads per channel. Deeper history needs the YouTube Data API, yt-dlp, or another extractor.
 - The fallback muxed stream is limited to 360p; HLS is used when available. 1080p/4K would require an optional yt-dlp/ffmpeg resolver.
 - Tags are not available for every video and cost one watch-page request per uncached video.
+- Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
+- Channel history records the first time a video was opened or marked watched; toggling watched off does not erase the history entry.
 - Shorts and live streams are not filtered separately.
 - SSAI can eventually put ads inside direct streams; the current approach is not future-proof.
 - Third-party YouTube clients may be subject to YouTube's Terms of Service.

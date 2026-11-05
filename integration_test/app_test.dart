@@ -8,6 +8,7 @@ import 'package:expeditus/src/data/database.dart';
 import 'package:expeditus/src/services/import_service.dart';
 import 'package:expeditus/src/services/rss_service.dart';
 import 'package:expeditus/src/services/sponsorblock_service.dart';
+import 'package:expeditus/src/services/video_download_service.dart';
 import 'package:expeditus/src/services/video_tags_service.dart';
 import 'package:expeditus/src/state/app_state.dart';
 import 'package:integration_test/integration_test.dart';
@@ -194,9 +195,44 @@ void main() {
     expect(find.text('Video A uno'), findsOneWidget);
     expect(find.text('Video A due'), findsNothing);
 
+    // Second tab: watched history for this channel.
+    await tester.tap(find.text('Cronologia'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('channel-video-aa1')), findsOneWidget);
+    expect(find.byKey(const Key('channel-video-aa2')), findsNothing);
+    await tester.tap(find.text('Video'));
+    await tester.pumpAndSettle();
+
+    // RSS mute: new items disappear from the channel page, history remains.
+    await tester.tap(find.byKey(const Key('channel-filter-all')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('channel-mute-rss')));
+    await tester.pump();
+    expect(find.byKey(const Key('channel-video-aa2')), findsNothing);
+    expect(find.byKey(const Key('channel-video-aa1')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('channel-mute-rss')));
+    await tester.pump();
+    expect(find.byKey(const Key('channel-video-aa2')), findsOneWidget);
+
+    // Offline download through the fake downloader.
+    await tester.tap(find.byKey(const Key('channel-download-aa1')));
+    await _pumpUntil(
+      tester,
+      () => harness.state.savedCount == 1,
+      reason: 'il download deve salvare il video',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Offline'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('channel-back')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('channel-page')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('nav-saved')));
+    await tester.pumpAndSettle();
+    expect(find.text('Video A uno'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('nav-latest')));
+    await tester.pumpAndSettle();
 
     // The same archive is reachable from the Canali list.
     await tester.tap(find.byKey(const Key('nav-channels')));
@@ -206,6 +242,21 @@ void main() {
     expect(find.byKey(const Key('channel-page')), findsOneWidget);
     await tester.tap(find.byKey(const Key('channel-back')));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('primo avvio: pagina di ricerca canale', (tester) async {
+    final harness = await _Harness.create(completeOnboarding: false);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(ExpeditusApp(state: harness.state));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Benvenuto.'), findsOneWidget);
+    expect(find.byKey(const Key('channel-search-field')), findsOneWidget);
+
+    await tester.tap(find.text('Salta per ora'));
+    await tester.pumpAndSettle();
+    expect(find.text('La tua casella è vuota'), findsOneWidget);
   });
 
   testWidgets('lo stream non disponibile è un errore recuperabile', (
@@ -297,7 +348,7 @@ class _Harness {
   final AppDatabase db;
   final Directory temp;
 
-  static Future<_Harness> create() async {
+  static Future<_Harness> create({bool completeOnboarding = true}) async {
     final temp = await Directory.systemTemp.createTemp('expeditus_e2e_');
     final db = AppDatabase(pathOverride: p.join(temp.path, 'expeditus.sqlite'));
     await db.open();
@@ -309,8 +360,14 @@ class _Harness {
       resolver: YouTubeResolver(client: client),
       sponsorBlock: SponsorBlockService(client: client),
       tags: _FakeTags(),
+      downloader: _FakeDownloader(
+        Directory(p.join(temp.path, 'downloads')),
+      ),
     );
     await state.init();
+    if (completeOnboarding) {
+      await state.completeOnboarding();
+    }
     return _Harness(state: state, db: db, temp: temp);
   }
 
@@ -477,6 +534,35 @@ class _FakeTags implements VideoTagsProvider {
       default:
         return const [];
     }
+  }
+
+  @override
+  void close() {}
+}
+
+
+class _FakeDownloader implements VideoDownloader {
+  _FakeDownloader(this.directory);
+
+  final Directory directory;
+
+  @override
+  Future<String> download(
+    String videoId, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await directory.create(recursive: true);
+    final file = File(p.join(directory.path, '$videoId.mp4'));
+    await file.writeAsBytes(const [0, 1, 2, 3]);
+    onProgress?.call(0.5);
+    onProgress?.call(1.0);
+    return file.path;
+  }
+
+  @override
+  Future<void> delete(String filePath) async {
+    final file = File(filePath);
+    if (await file.exists()) await file.delete();
   }
 
   @override

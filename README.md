@@ -17,7 +17,11 @@ One row per channel. The latest video. That is the whole feed.
 - **One latest video per channel**, in reverse chronological order.
 - **No recommendations, no autoplay, no thumbnails, no Shorts feed noise.**
 - **Import your subscriptions** from Google Takeout, paste channel handles or URLs, or search YouTube by keyword.
-- **Channel archive:** click a channel name to browse its recent uploads, filter by watched state or search term, and see tags when available.
+- **Channel page with two tabs:** the recent archive and the channel history, with filters, search, tags, and offline downloads.
+- **Save videos for offline playback:** download a video from its channel page; it appears under **Saved** and plays from local storage.
+- **RSS mute:** stop new uploads from a channel while keeping its archive and history available.
+- **Add a video from a link:** paste a YouTube video URL to subscribe to its channel automatically and put the video in your queue.
+- **First-run onboarding:** the app opens on channel search with a short explanation.
 - **Local-first:** subscriptions, watch state, queue, and settings stay on your computer. No Google login.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
@@ -38,8 +42,8 @@ The installer is not code-signed yet, so Windows SmartScreen may show a warning.
 
 ## First run
 
-1. Launch Expeditus.
-2. Choose **Import** to load a Google Takeout `subscriptions.csv`, paste channel handles/URLs/IDs, or use **Search channel** to find a channel by keyword.
+1. Launch Expeditus: the first-run screen opens channel search.
+2. Search a channel by name, or choose **Import** to load a Google Takeout `subscriptions.csv`, paste channel handles/URLs/IDs, or add a video from a link.
 3. Pick a video and press `Enter` to play it. Press `M` to mark it watched or `S` to add it to the queue.
 
 ## Keyboard shortcuts

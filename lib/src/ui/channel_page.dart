@@ -20,10 +20,13 @@ class ChannelPage extends StatefulWidget {
   State<ChannelPage> createState() => _ChannelPageState();
 }
 
-class _ChannelPageState extends State<ChannelPage> {
+class _ChannelPageState extends State<ChannelPage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _search = TextEditingController();
+  late final TabController _tabs;
 
   List<VideoItem> _videos = const [];
+  List<VideoItem> _history = const [];
   bool _loading = true;
   bool _loadingTags = false;
   bool _tagsRun = false;
@@ -31,14 +34,23 @@ class _ChannelPageState extends State<ChannelPage> {
   String _query = '';
   String? _error;
 
+  Channel get _channel {
+    for (final item in widget.state.channels) {
+      if (item.id == widget.channel.id) return item;
+    }
+    return widget.channel;
+  }
+
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 2, vsync: this);
     unawaited(_load());
   }
 
   @override
   void dispose() {
+    _tabs.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -46,9 +58,11 @@ class _ChannelPageState extends State<ChannelPage> {
   Future<void> _load() async {
     try {
       final videos = await widget.state.channelVideos(widget.channel.id);
+      final history = await widget.state.channelHistory(widget.channel.id);
       if (!mounted) return;
       setState(() {
         _videos = videos;
+        _history = history;
         _loading = false;
         _error = null;
       });
@@ -64,8 +78,12 @@ class _ChannelPageState extends State<ChannelPage> {
 
   Future<void> _reload() async {
     final videos = await widget.state.channelVideos(widget.channel.id);
+    final history = await widget.state.channelHistory(widget.channel.id);
     if (!mounted) return;
-    setState(() => _videos = videos);
+    setState(() {
+      _videos = videos;
+      _history = history;
+    });
     unawaited(_fetchTags());
   }
 
@@ -130,13 +148,30 @@ class _ChannelPageState extends State<ChannelPage> {
     if (mounted) await _reload();
   }
 
+  Future<void> _toggleMute() async {
+    await widget.state.toggleMute(widget.channel.id);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _download(VideoItem video) async {
+    await widget.state.downloadVideo(video);
+    if (mounted) await _reload();
+  }
+
+  Future<void> _deleteDownload(VideoItem video) async {
+    await widget.state.deleteDownload(video);
+    if (mounted) await _reload();
+  }
+
   Future<void> _openExternal(VideoItem video) async {
     await launchUrl(Uri.parse(video.url), mode: LaunchMode.externalApplication);
   }
 
   List<VideoItem> get _filtered {
     final query = _query.trim().toLowerCase();
+    final muted = _channel.muted;
     return _videos.where((video) {
+      if (muted && video.isNew) return false;
       switch (_filter) {
         case 'unwatched':
           if (video.isWatched) return false;
@@ -146,61 +181,113 @@ class _ChannelPageState extends State<ChannelPage> {
           if (!video.queued) return false;
       }
       if (query.isEmpty) return true;
-      return video.title.toLowerCase().contains(query) ||
-          video.description.toLowerCase().contains(query) ||
-          video.keywords.any((tag) => tag.toLowerCase().contains(query));
+      return _matches(video, query);
     }).toList();
+  }
+
+  List<VideoItem> get _filteredHistory {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return _history;
+    return _history.where((video) => _matches(video, query)).toList();
+  }
+
+  static bool _matches(VideoItem video, String query) {
+    return video.title.toLowerCase().contains(query) ||
+        video.description.toLowerCase().contains(query) ||
+        video.keywords.any((tag) => tag.toLowerCase().contains(query));
   }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
-    return Scaffold(
-      key: const Key('channel-page'),
-      body: Column(
-        children: [
-          _ChannelHeader(
-            channel: widget.channel,
-            videos: _videos,
-            loadingTags: _loadingTags,
-            filter: _filter,
-            search: _search,
-            onFilter: (value) => setState(() => _filter = value),
-            onSearch: (value) => setState(() => _query = value),
-            onBack: () => Navigator.of(context).pop(),
-          ),
-          if (_loadingTags) const LinearProgressIndicator(minHeight: 1),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _Message(
-                    icon: Icons.error_outline_rounded,
-                    title: 'Errore',
-                    body: _error!,
-                  )
-                : _videos.isEmpty
-                ? const _Message(
-                    icon: Icons.video_library_outlined,
-                    title: 'Nessun video passato',
-                    body: 'Questo canale non ha video nel feed RSS corrente.',
-                  )
-                : filtered.isEmpty
-                ? const _Message(
-                    icon: Icons.search_off_rounded,
-                    title: 'Nessun risultato',
-                    body: 'Nessun video corrisponde al filtro o al termine cercato.',
-                  )
-                : _VideoList(
-                    videos: filtered,
-                    onPlay: _play,
-                    onToggleWatched: _toggleWatched,
-                    onToggleQueued: _toggleQueued,
-                    onOpenExternal: _openExternal,
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        final channel = _channel;
+        final filtered = _filtered;
+        final filteredHistory = _filteredHistory;
+        final visibleArchive = channel.muted
+            ? _videos.where((video) => !video.isNew).toList()
+            : _videos;
+
+        return ExpeditusDownloadProgress(
+          progress: widget.state.downloadProgress,
+          child: Scaffold(
+            key: const Key('channel-page'),
+            body: Column(
+              children: [
+                _ChannelHeader(
+                  channel: channel,
+                  videos: _videos,
+                  loadingTags: _loadingTags,
+                  muted: channel.muted,
+                  search: _search,
+                  onSearch: (value) => setState(() => _query = value),
+                  onToggleMute: _toggleMute,
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+                Container(
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: ExpeditusColors.border),
+                    ),
                   ),
+                  child: TabBar(
+                    controller: _tabs,
+                    labelColor: ExpeditusColors.accent,
+                    unselectedLabelColor: ExpeditusColors.muted,
+                    indicatorColor: ExpeditusColors.accent,
+                    tabs: const [
+                      Tab(text: 'Video'),
+                      Tab(text: 'Cronologia'),
+                    ],
+                  ),
+                ),
+                if (_loadingTags) const LinearProgressIndicator(minHeight: 1),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                      ? _Message(
+                          icon: Icons.error_outline_rounded,
+                          title: 'Errore',
+                          body: _error!,
+                        )
+                      : TabBarView(
+                          controller: _tabs,
+                          children: [
+                            _VideosTab(
+                              videos: filtered,
+                              allVideos: visibleArchive,
+                              filter: _filter,
+                              query: _query,
+                              muted: channel.muted,
+                              onFilter: (value) =>
+                                  setState(() => _filter = value),
+                              onPlay: _play,
+                              onToggleWatched: _toggleWatched,
+                              onToggleQueued: _toggleQueued,
+                              onDownload: _download,
+                              onDeleteDownload: _deleteDownload,
+                              onOpenExternal: _openExternal,
+                            ),
+                            _HistoryTab(
+                              videos: filteredHistory,
+                              query: _query,
+                              onPlay: _play,
+                              onToggleWatched: _toggleWatched,
+                              onToggleQueued: _toggleQueued,
+                              onDownload: _download,
+                              onDeleteDownload: _deleteDownload,
+                              onOpenExternal: _openExternal,
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -210,31 +297,30 @@ class _ChannelHeader extends StatelessWidget {
     required this.channel,
     required this.videos,
     required this.loadingTags,
-    required this.filter,
+    required this.muted,
     required this.search,
-    required this.onFilter,
     required this.onSearch,
+    required this.onToggleMute,
     required this.onBack,
   });
 
   final Channel channel;
   final List<VideoItem> videos;
   final bool loadingTags;
-  final String filter;
+  final bool muted;
   final TextEditingController search;
-  final ValueChanged<String> onFilter;
   final ValueChanged<String> onSearch;
+  final VoidCallback onToggleMute;
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    final all = videos.length;
-    final unwatched = videos.where((video) => !video.isWatched).length;
-    final watched = videos.where((video) => video.isWatched).length;
-    final queued = videos.where((video) => video.queued).length;
+    final last = channel.lastChecked == null
+        ? 'mai aggiornato'
+        : 'aggiornato ${relativeTime(DateTime.fromMillisecondsSinceEpoch(channel.lastChecked!))}';
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 24, 14),
+      padding: const EdgeInsets.fromLTRB(18, 18, 24, 12),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: ExpeditusColors.border)),
       ),
@@ -266,8 +352,8 @@ class _ChannelHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$all video · aggiornato '
-                      '${relativeTime(channel.lastChecked == null ? null : DateTime.fromMillisecondsSinceEpoch(channel.lastChecked!))}',
+                      '${videos.length} video · $last'
+                      '${muted ? ' · RSS silenziato' : ''}',
                       style: const TextStyle(
                         color: ExpeditusColors.muted,
                         fontSize: 11.5,
@@ -287,33 +373,98 @@ class _ChannelHeader extends StatelessWidget {
                   'Carico tag…',
                   style: TextStyle(color: ExpeditusColors.muted, fontSize: 11),
                 ),
+                const SizedBox(width: 8),
               ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              SizedBox(
-                width: 360,
-                child: TextField(
-                  key: const Key('channel-page-search'),
-                  controller: search,
-                  onChanged: onSearch,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: 'Cerca nel canale, anche nei tag…',
-                    prefixIcon: Icon(Icons.search_rounded, size: 18),
-                    prefixIconConstraints: BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
+              Tooltip(
+                message: muted
+                    ? 'Riattiva l’RSS: i nuovi video torneranno a essere proposti.'
+                    : 'Silenzia l’RSS: nessun nuovo video verrà proposto. '
+                          'Archivio e cronologia restano disponibili.',
+                child: TextButton.icon(
+                  key: const Key('channel-mute-rss'),
+                  onPressed: onToggleMute,
+                  icon: Icon(
+                    muted
+                        ? Icons.notifications_off_rounded
+                        : Icons.notifications_active_outlined,
+                    size: 16,
+                  ),
+                  label: Text(muted ? 'RSS silenziato' : 'Silenzia RSS'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: muted
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
+          SizedBox(
+            width: 380,
+            child: TextField(
+              key: const Key('channel-page-search'),
+              controller: search,
+              onChanged: onSearch,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: 'Cerca nel canale, anche nei tag…',
+                prefixIcon: Icon(Icons.search_rounded, size: 18),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: 36,
+                  minHeight: 36,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideosTab extends StatelessWidget {
+  const _VideosTab({
+    required this.videos,
+    required this.allVideos,
+    required this.filter,
+    required this.query,
+    required this.muted,
+    required this.onFilter,
+    required this.onPlay,
+    required this.onToggleWatched,
+    required this.onToggleQueued,
+    required this.onDownload,
+    required this.onDeleteDownload,
+    required this.onOpenExternal,
+  });
+
+  final List<VideoItem> videos;
+  final List<VideoItem> allVideos;
+  final String filter;
+  final String query;
+  final bool muted;
+  final ValueChanged<String> onFilter;
+  final Future<void> Function(VideoItem) onPlay;
+  final Future<void> Function(VideoItem) onToggleWatched;
+  final Future<void> Function(VideoItem) onToggleQueued;
+  final Future<void> Function(VideoItem) onDownload;
+  final Future<void> Function(VideoItem) onDeleteDownload;
+  final Future<void> Function(VideoItem) onOpenExternal;
+
+  @override
+  Widget build(BuildContext context) {
+    final all = allVideos.length;
+    final unwatched = allVideos.where((video) => !video.isWatched).length;
+    final watched = allVideos.where((video) => video.isWatched).length;
+    final queued = allVideos.where((video) => video.queued).length;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+          child: Wrap(
             spacing: 6,
             runSpacing: 4,
             children: [
@@ -347,8 +498,85 @@ class _ChannelHeader extends StatelessWidget {
               ),
             ],
           ),
-        ],
-      ),
+        ),
+        Expanded(
+          child: videos.isEmpty
+              ? _Message(
+                  icon: muted
+                      ? Icons.notifications_off_outlined
+                      : query.trim().isEmpty
+                      ? Icons.video_library_outlined
+                      : Icons.search_off_rounded,
+                  title: muted
+                      ? 'RSS silenziato'
+                      : query.trim().isEmpty
+                      ? 'Nessun video'
+                      : 'Nessun risultato',
+                  body: muted
+                      ? 'Le novità non vengono proposte. Riattiva l’RSS dal pulsante in alto per vederle.'
+                      : query.trim().isEmpty
+                      ? 'Questo canale non ha video nel feed RSS corrente.'
+                      : 'Nessun video corrisponde al filtro o al termine cercato.',
+                )
+              : _VideoList(
+                  videos: videos,
+                  history: false,
+                  onPlay: onPlay,
+                  onToggleWatched: onToggleWatched,
+                  onToggleQueued: onToggleQueued,
+                  onDownload: onDownload,
+                  onDeleteDownload: onDeleteDownload,
+                  onOpenExternal: onOpenExternal,
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HistoryTab extends StatelessWidget {
+  const _HistoryTab({
+    required this.videos,
+    required this.query,
+    required this.onPlay,
+    required this.onToggleWatched,
+    required this.onToggleQueued,
+    required this.onDownload,
+    required this.onDeleteDownload,
+    required this.onOpenExternal,
+  });
+
+  final List<VideoItem> videos;
+  final String query;
+  final Future<void> Function(VideoItem) onPlay;
+  final Future<void> Function(VideoItem) onToggleWatched;
+  final Future<void> Function(VideoItem) onToggleQueued;
+  final Future<void> Function(VideoItem) onDownload;
+  final Future<void> Function(VideoItem) onDeleteDownload;
+  final Future<void> Function(VideoItem) onOpenExternal;
+
+  @override
+  Widget build(BuildContext context) {
+    if (videos.isEmpty) {
+      return _Message(
+        icon: query.trim().isEmpty
+            ? Icons.history_rounded
+            : Icons.search_off_rounded,
+        title: query.trim().isEmpty ? 'Cronologia vuota' : 'Nessun risultato',
+        body: query.trim().isEmpty
+            ? 'I video che apri o segni come visti appariranno qui.'
+            : 'Nessun video della cronologia corrisponde al termine cercato.',
+      );
+    }
+    return _VideoList(
+      videos: videos,
+      history: true,
+      onPlay: onPlay,
+      onToggleWatched: onToggleWatched,
+      onToggleQueued: onToggleQueued,
+      onDownload: onDownload,
+      onDeleteDownload: onDeleteDownload,
+      onOpenExternal: onOpenExternal,
     );
   }
 }
@@ -375,7 +603,9 @@ class _FilterChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? ExpeditusColors.accentSoft : ExpeditusColors.surface,
+          color: selected
+              ? ExpeditusColors.accentSoft
+              : ExpeditusColors.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected ? ExpeditusColors.accent : ExpeditusColors.border,
@@ -397,16 +627,22 @@ class _FilterChip extends StatelessWidget {
 class _VideoList extends StatelessWidget {
   const _VideoList({
     required this.videos,
+    required this.history,
     required this.onPlay,
     required this.onToggleWatched,
     required this.onToggleQueued,
+    required this.onDownload,
+    required this.onDeleteDownload,
     required this.onOpenExternal,
   });
 
   final List<VideoItem> videos;
+  final bool history;
   final Future<void> Function(VideoItem) onPlay;
   final Future<void> Function(VideoItem) onToggleWatched;
   final Future<void> Function(VideoItem) onToggleQueued;
+  final Future<void> Function(VideoItem) onDownload;
+  final Future<void> Function(VideoItem) onDeleteDownload;
   final Future<void> Function(VideoItem) onOpenExternal;
 
   @override
@@ -414,7 +650,10 @@ class _VideoList extends StatelessWidget {
     final children = <Widget>[];
     String? currentMonth;
     for (final video in videos) {
-      final rawMonth = DateFormat('MMMM yyyy', 'it_IT').format(video.published);
+      final date = history && video.watchedAt != null
+          ? DateTime.fromMillisecondsSinceEpoch(video.watchedAt!)
+          : video.published;
+      final rawMonth = DateFormat('MMMM yyyy', 'it_IT').format(date);
       final month = rawMonth.isEmpty
           ? rawMonth
           : rawMonth[0].toUpperCase() + rawMonth.substring(1);
@@ -438,9 +677,12 @@ class _VideoList extends StatelessWidget {
       children.add(
         _ChannelVideoTile(
           video: video,
+          history: history,
           onPlay: () => onPlay(video),
           onToggleWatched: () => onToggleWatched(video),
           onToggleQueued: () => onToggleQueued(video),
+          onDownload: () => onDownload(video),
+          onDeleteDownload: () => onDeleteDownload(video),
           onOpenExternal: () => onOpenExternal(video),
         ),
       );
@@ -456,21 +698,32 @@ class _VideoList extends StatelessWidget {
 class _ChannelVideoTile extends StatelessWidget {
   const _ChannelVideoTile({
     required this.video,
+    required this.history,
     required this.onPlay,
     required this.onToggleWatched,
     required this.onToggleQueued,
+    required this.onDownload,
+    required this.onDeleteDownload,
     required this.onOpenExternal,
   });
 
   final VideoItem video;
+  final bool history;
   final VoidCallback onPlay;
   final VoidCallback onToggleWatched;
   final VoidCallback onToggleQueued;
+  final VoidCallback onDownload;
+  final VoidCallback onDeleteDownload;
   final VoidCallback onOpenExternal;
 
   @override
   Widget build(BuildContext context) {
     final dimmed = video.isWatched;
+    final dateLabel = history && video.watchedAt != null
+        ? 'aperto ${relativeTime(DateTime.fromMillisecondsSinceEpoch(video.watchedAt!))}'
+        : shortDate(video.published);
+    final progress = ExpeditusDownloadProgress.of(context, video.id);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       child: Material(
@@ -509,7 +762,7 @@ class _ChannelVideoTile extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            shortDate(video.published),
+                            dateLabel,
                             style: const TextStyle(
                               color: ExpeditusColors.muted,
                               fontSize: 10.5,
@@ -532,6 +785,10 @@ class _ChannelVideoTile extends StatelessWidget {
                           if (video.queued) ...[
                             const SizedBox(width: 8),
                             const _Badge('In coda', ExpeditusColors.accent),
+                          ],
+                          if (video.isDownloaded) ...[
+                            const SizedBox(width: 8),
+                            const _Badge('Offline', ExpeditusColors.green),
                           ],
                         ],
                       ),
@@ -657,6 +914,42 @@ class _ChannelVideoTile extends StatelessWidget {
                         size: 19,
                       ),
                     ),
+                    if (progress != null)
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              value: progress,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      IconButton(
+                        key: ValueKey('channel-download-${video.id}'),
+                        tooltip: video.isDownloaded
+                            ? 'Rimuovi il download'
+                            : 'Salva in locale',
+                        onPressed: video.isDownloaded
+                            ? onDeleteDownload
+                            : onDownload,
+                        icon: Icon(
+                          video.isDownloaded
+                              ? Icons.download_done_rounded
+                              : Icons.download_rounded,
+                          color: video.isDownloaded
+                              ? ExpeditusColors.green
+                              : video.downloadStatus == 'error'
+                              ? ExpeditusColors.red
+                              : ExpeditusColors.muted,
+                          size: 19,
+                        ),
+                      ),
                     IconButton(
                       key: ValueKey('channel-open-${video.id}'),
                       tooltip: 'Apri su YouTube',
@@ -671,6 +964,29 @@ class _ChannelVideoTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Injects the live download progress without making every tile depend on
+/// AppState directly.
+class ExpeditusDownloadProgress extends InheritedWidget {
+  const ExpeditusDownloadProgress({
+    super.key,
+    required this.progress,
+    required super.child,
+  });
+
+  final Map<String, double> progress;
+
+  static double? of(BuildContext context, String videoId) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<ExpeditusDownloadProgress>();
+    return scope?.progress[videoId];
+  }
+
+  @override
+  bool updateShouldNotify(ExpeditusDownloadProgress oldWidget) {
+    return oldWidget.progress != progress;
   }
 }
 

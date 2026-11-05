@@ -359,6 +359,14 @@ class _Sidebar extends StatelessWidget {
             selected: state.view == 'queue',
             onTap: () => onSelect('queue'),
           ),
+          _NavItem(
+            key: const Key('nav-saved'),
+            label: 'Salvati',
+            icon: Icons.download_done_rounded,
+            count: state.savedCount,
+            selected: state.view == 'saved',
+            onTap: () => onSelect('saved'),
+          ),
           const SizedBox(height: 10),
           const Divider(),
           const SizedBox(height: 10),
@@ -513,12 +521,14 @@ class _Header extends StatelessWidget {
     final title = switch (state.view) {
       'new' => 'Nuovi',
       'queue' => 'Coda',
+      'saved' => 'Salvati',
       'channels' => 'Canali',
       _ => 'Ultimi',
     };
     final subtitle = switch (state.view) {
       'new' => '${state.visible.length} video da vedere',
       'queue' => '${state.queueCount} video in coda',
+      'saved' => '${state.savedCount} video offline',
       'channels' => '${state.channels.length} iscrizioni',
       _ => '${state.latestCount} canali · ${state.newCount} nuovi',
     };
@@ -684,12 +694,16 @@ class _EmptyState extends StatelessWidget {
                 ? 'Sei in pari'
                 : state.view == 'queue'
                     ? 'La coda è vuota'
-                    : 'Nessun video';
+                    : state.view == 'saved'
+                        ? 'Nessun video salvato'
+                        : 'Nessun video';
     final message = filtered
         ? 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
         : noChannels
             ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
-            : 'Nessun nuovo video dai canali che segui.';
+            : state.view == 'saved'
+                ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
+                : 'Nessun nuovo video dai canali che segui.';
 
     return Center(
       child: ConstrainedBox(
