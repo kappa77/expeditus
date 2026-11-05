@@ -1,5 +1,7 @@
 # Expeditus
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
 **YouTube come una casella di posta, non un casinò.**
 
 Expeditus è un'app desktop Flutter per le tue iscrizioni YouTube. Mostra **un solo video per canale** — l'ultimo pubblicato — in ordine cronologico. Niente home algoritmica, niente raccomandazioni, niente autoplay, niente thumbnail: solo canale, titolo, due righe di descrizione e tempo di pubblicazione.
@@ -9,6 +11,8 @@ La riproduzione usa stream diretti (nessun player YouTube), quindi non passa dal
 ## English
 
 **Expeditus** is a Flutter desktop app that turns YouTube subscriptions into a quiet, text-first inbox. It shows only the latest upload from each channel, with no algorithmic home, no recommendations, no autoplay, and no thumbnails. It reads public RSS feeds (no Google login, no API quota), stores everything locally, and plays videos through direct streams with libmpv instead of the YouTube player. It also includes a channel archive with keyword and tag filters, SponsorBlock, playback speed from 0.25× to 3.50×, and debounced ±10-second seeking.
+
+Released under the **MIT License**.
 
 ## Cosa fa
 
@@ -120,3 +124,9 @@ test/
 - I tag sono letti dalla pagina del video, uno per video, e messi in cache. Molti video non hanno tag: in quel caso non compare nulla.
 - La riproduzione dipende da YouTube: se un video non si apre, c'è sempre “Apri su YouTube”.
 - Nessuna sincronizzazione tra dispositivi: tutto è locale, per scelta.
+
+## Licenza
+
+MIT — vedi [LICENSE](LICENSE).
+
+Le dipendenze mantengono le proprie licenze. In particolare `media_kit`, `libmpv` e gli archivi scaricati da `tool/fetch_windows_deps.ps1` hanno licenze proprie.
