@@ -32,6 +32,7 @@ void main() {
     await tester.pumpWidget(ExpeditusApp(state: harness.state));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('app-version')), findsOneWidget);
     expect(find.text('La tua casella è vuota'), findsOneWidget);
 
     // Import via the paste flow, which is the part of the dialog that does not

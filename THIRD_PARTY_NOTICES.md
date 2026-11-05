@@ -15,6 +15,7 @@ This file lists the third-party components shipped with the Windows build and th
 | Vulkan loader (`vulkan-1.dll`) | 2022 build | Apache-2.0 | [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) · [license](LICENSES/Apache-2.0.txt) |
 | zlib (`zlib.dll`) | 2022 build | Zlib | [zlib](https://zlib.net) · [license](LICENSES/Zlib.txt) |
 | `d3dcompiler_47.dll` | Microsoft | Microsoft DirectX redistributable | Redistributed as part of the ANGLE package under Microsoft’s terms |
+| Microsoft Visual C++ Runtime (`msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`) | bundled | Microsoft Visual Studio redistributable | App-local deployment under Microsoft’s redistribution terms |
 | SQLite (`sqlite3.dll`) | bundled | Public domain | [SQLite copyright](https://sqlite.org/copyright.html) |
 | Flutter engine (`flutter_windows.dll`, `dartjni.dll`, ICU data) | Flutter 3.47.7 | BSD-3-Clause | [Flutter license](LICENSES/Flutter-BSD-3-Clause.txt) |
 

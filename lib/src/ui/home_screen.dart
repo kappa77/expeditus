@@ -7,6 +7,7 @@ import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../version.dart';
 import 'channel_page.dart';
 import 'channels_view.dart';
 import 'import_dialog.dart';
@@ -816,6 +817,22 @@ class _StatusBar extends StatelessWidget {
             style: TextStyle(
               color: ExpeditusColors.muted.withValues(alpha: 0.55),
               fontSize: 10.5,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 1,
+            height: 12,
+            color: ExpeditusColors.border,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'v$kAppVersion',
+            key: const Key('app-version'),
+            style: const TextStyle(
+              color: ExpeditusColors.muted,
+              fontSize: 10.5,
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
         ],

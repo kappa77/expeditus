@@ -1,10 +1,11 @@
-; Expeditus Windows installer (NSIS 3.x).
+; Expeditus one-click Windows installer (NSIS 3.x).
+; Double-clicking the generated exe installs silently for the current user
+; and launches Expeditus. No wizard, no external runtime packages.
+;
 ; Build from the repository root with:
 ;   makensis /DAPP_VERSION=1.0.0 /DAPP_BUILD=1 installer\expeditus.nsi
-; The release workflow does this automatically.
 
 Unicode true
-!include "MUI2.nsh"
 
 !define APP_NAME "Expeditus"
 !define APP_EXE "expeditus.exe"
@@ -25,11 +26,17 @@ OutFile "..\dist\ExpeditusSetup-${APP_VERSION}.exe"
 InstallDir "$LOCALAPPDATA\Programs\${APP_NAME}"
 InstallDirRegKey HKCU "Software\Expeditus" "InstallDir"
 RequestExecutionLevel user
+SilentInstall silent
+SilentUnInstall silent
 SetCompressor /SOLID lzma
 SetCompressorDictSize 64
 CRCCheck on
+SetOverwrite on
 ManifestDPIAware true
 BrandingText "${APP_NAME} ${APP_VERSION}"
+
+Icon "..\windows\runner\resources\app_icon.ico"
+UninstallIcon "..\windows\runner\resources\app_icon.ico"
 
 VIProductVersion "${APP_VERSION}.${APP_BUILD}"
 VIAddVersionKey "ProductName" "${APP_NAME}"
@@ -40,24 +47,6 @@ VIAddVersionKey "FileVersion" "${APP_VERSION}.${APP_BUILD}"
 VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 ${APP_PUBLISHER}"
 VIAddVersionKey "OriginalFilename" "ExpeditusSetup-${APP_VERSION}.exe"
 
-!define MUI_ABORTWARNING
-!define MUI_ICON "..\windows\runner\resources\app_icon.ico"
-!define MUI_UNICON "..\windows\runner\resources\app_icon.ico"
-!define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
-
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "..\LICENSE"
-!insertmacro MUI_PAGE_COMPONENTS
-!insertmacro MUI_PAGE_DIRECTORY
-!insertmacro MUI_PAGE_INSTFILES
-!insertmacro MUI_PAGE_FINISH
-
-!insertmacro MUI_UNPAGE_CONFIRM
-!insertmacro MUI_UNPAGE_INSTFILES
-
-!insertmacro MUI_LANGUAGE "English"
-!insertmacro MUI_LANGUAGE "Italian"
-
 Function .onInit
   SetShellVarContext current
 FunctionEnd
@@ -66,11 +55,14 @@ Function un.onInit
   SetShellVarContext current
 FunctionEnd
 
-Section "Expeditus" SEC_MAIN
-  SectionIn RO
+Section "Install"
   SetShellVarContext current
-  SetOutPath "$INSTDIR"
 
+  ; NSIS cannot overwrite a running executable. Expeditus has no unsaved
+  ; document state, so closing it is safe.
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /IM ${APP_EXE} /F'
+
+  SetOutPath "$INSTDIR"
   File /r "..\build\windows\x64\runner\Release\*.*"
   File "..\LICENSE"
   File /oname=THIRD_PARTY_NOTICES.txt "..\THIRD_PARTY_NOTICES.md"
@@ -82,8 +74,10 @@ Section "Expeditus" SEC_MAIN
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\Licenze ${APP_NAME}.lnk" "$INSTDIR\THIRD_PARTY_NOTICES.txt"
+  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
+
   WriteRegStr HKCU "Software\Expeditus" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${APP_NAME}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${APP_VERSION}"
@@ -97,15 +91,15 @@ Section "Expeditus" SEC_MAIN
   WriteRegStr HKCU "${UNINST_KEY}" "URLUpdateInfo" "${APP_URL}/releases"
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
-SectionEnd
 
-Section /o "Desktop shortcut" SEC_DESKTOP
-  SetShellVarContext current
-  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
+  ; One click: install, then open the app.
+  Exec "$INSTDIR\${APP_EXE}"
 SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
+
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /IM ${APP_EXE} /F'
 
   Delete "$DESKTOP\${APP_NAME}.lnk"
   Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
@@ -117,8 +111,3 @@ Section "Uninstall"
   DeleteRegKey HKCU "${UNINST_KEY}"
   DeleteRegKey HKCU "Software\Expeditus"
 SectionEnd
-
-!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_MAIN} "Installa Expeditus e le licenze dei componenti."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_DESKTOP} "Crea un collegamento sul desktop."
-!insertmacro MUI_FUNCTION_DESCRIPTION_END
