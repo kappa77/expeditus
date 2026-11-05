@@ -21,10 +21,14 @@ abstract class VideoDownloader {
 /// without bundling ffmpeg. YouTube usually limits them to 360p; HLS/adaptive
 /// muxing would require an external tool.
 class VideoDownloadService implements VideoDownloader {
-  VideoDownloadService({YoutubeExplode? youtube})
-      : _youtube = youtube ?? YoutubeExplode();
+  VideoDownloadService({
+    YoutubeExplode? youtube,
+    Future<Directory> Function()? directoryProvider,
+  })  : _youtube = youtube ?? YoutubeExplode(),
+        _directoryProvider = directoryProvider;
 
   final YoutubeExplode _youtube;
+  final Future<Directory> Function()? _directoryProvider;
   bool _closed = false;
 
   @override
@@ -78,8 +82,11 @@ class VideoDownloadService implements VideoDownloader {
   }
 
   Future<Directory> _downloadDirectory() async {
-    final support = await getApplicationSupportDirectory();
-    final directory = Directory(p.join(support.path, 'downloads'));
+    final directory = _directoryProvider != null
+        ? await _directoryProvider()
+        : Directory(
+            p.join((await getApplicationSupportDirectory()).path, 'downloads'),
+          );
     await directory.create(recursive: true);
     return directory;
   }
