@@ -27,7 +27,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 4,
+        version: 5,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -42,6 +42,7 @@ class AppDatabase {
               last_checked INTEGER,
               muted INTEGER NOT NULL DEFAULT 0,
               show_in_latest INTEGER NOT NULL DEFAULT 1,
+              default_playback_rate REAL,
               error TEXT
             )
           ''');
@@ -64,6 +65,8 @@ class AppDatabase {
               download_status TEXT NOT NULL DEFAULT 'none',
               downloaded_at INTEGER,
               download_error TEXT,
+              chapters TEXT,
+              chapters_fetched INTEGER NOT NULL DEFAULT 0,
               FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
             )
           ''');
@@ -73,6 +76,16 @@ class AppDatabase {
           await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC)',
           );
+          await db.execute('''
+            CREATE TABLE bookmarks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              video_id TEXT NOT NULL,
+              position_seconds INTEGER NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              created_at INTEGER NOT NULL,
+              FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+            )
+          ''');
           await db.execute('''
             CREATE TABLE settings (
               key TEXT PRIMARY KEY,
@@ -101,6 +114,25 @@ class AppDatabase {
               'ALTER TABLE channels ADD COLUMN show_in_latest INTEGER NOT NULL DEFAULT 1',
             );
           }
+          if (oldVersion < 5) {
+            await db.execute(
+              'ALTER TABLE channels ADD COLUMN default_playback_rate REAL',
+            );
+            await db.execute('ALTER TABLE videos ADD COLUMN chapters TEXT');
+            await db.execute(
+              'ALTER TABLE videos ADD COLUMN chapters_fetched INTEGER NOT NULL DEFAULT 0',
+            );
+            await db.execute('''
+              CREATE TABLE bookmarks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                position_seconds INTEGER NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+              )
+            ''');
+          }
         },
       ),
     );
@@ -127,9 +159,10 @@ class AppDatabase {
     await db.rawInsert(
       '''
       INSERT INTO channels (
-        id, title, handle, added_at, last_checked, muted, show_in_latest, error
+        id, title, handle, added_at, last_checked, muted, show_in_latest,
+        default_playback_rate, error
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = CASE
           WHEN excluded.title <> '' THEN excluded.title
@@ -145,6 +178,7 @@ class AppDatabase {
         channel.lastChecked,
         channel.muted ? 1 : 0,
         channel.showInLatest ? 1 : 0,
+        channel.defaultPlaybackRate,
         channel.error,
       ],
     );
@@ -184,6 +218,16 @@ class AppDatabase {
     await db.update(
       'channels',
       {'show_in_latest': visible ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> setChannelPlaybackRate(String id, double? rate) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {'default_playback_rate': rate},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -339,6 +383,55 @@ class AppDatabase {
       ORDER BY v.downloaded_at DESC
     ''');
     return rows.map(VideoItem.fromMap).toList();
+  }
+
+  Future<void> setChapters(
+    String videoId,
+    List<VideoChapter> chapters,
+  ) async {
+    final db = await database;
+    await db.update(
+      'videos',
+      {
+        'chapters': jsonEncode(chapters.map((chapter) => chapter.toJson()).toList()),
+        'chapters_fetched': 1,
+      },
+      where: 'id = ?',
+      whereArgs: [videoId],
+    );
+  }
+
+  Future<int> addBookmark(
+    String videoId,
+    int positionSeconds,
+    String note,
+  ) async {
+    final db = await database;
+    return db.insert(
+      'bookmarks',
+      {
+        'video_id': videoId,
+        'position_seconds': positionSeconds,
+        'note': note,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      },
+    );
+  }
+
+  Future<List<VideoBookmark>> bookmarksForVideo(String videoId) async {
+    final db = await database;
+    final rows = await db.query(
+      'bookmarks',
+      where: 'video_id = ?',
+      whereArgs: [videoId],
+      orderBy: 'position_seconds ASC',
+    );
+    return rows.map(VideoBookmark.fromMap).toList();
+  }
+
+  Future<void> deleteBookmark(int id) async {
+    final db = await database;
+    await db.delete('bookmarks', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<void> setDownload(

@@ -149,6 +149,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('channel-page')), findsOneWidget);
 
+    // Refresh only this channel.
+    final beforeCheck = harness.state.channels
+        .firstWhere((channel) => channel.id == _channelA)
+        .lastChecked;
+    await tester.tap(find.byKey(const Key('channel-refresh-only')));
+    await _pumpUntil(
+      tester,
+      () {
+        final channel = harness.state.channels
+            .firstWhere((channel) => channel.id == _channelA);
+        return channel.lastChecked != beforeCheck && !harness.state.refreshing;
+      },
+      reason: 'il refresh deve aggiornare solo questo canale',
+    );
+    await tester.pumpAndSettle();
+
     // The latest upload and the older one are both here.
     expect(find.text('Video A due'), findsOneWidget);
     expect(find.text('Video A uno'), findsOneWidget);
@@ -277,6 +293,64 @@ void main() {
     expect(find.text('La tua casella è vuota'), findsOneWidget);
   });
 
+  testWidgets('la velocità predefinita del canale arriva al player', (
+    tester,
+  ) async {
+    final harness = await _Harness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      ExpeditusApp(
+        state: harness.state,
+        playerResolver: (_) async => throw Exception('test stream error'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('import-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Incolla canali'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('import-paste-field')),
+      '@testchannel',
+    );
+    await tester.tap(find.byKey(const Key('import-submit')));
+    await _pumpUntil(
+      tester,
+      () => harness.state.latest.isNotEmpty,
+      reason: 'il canale deve essere importato',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(Key('channel-link-$_channelA')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('channel-playback-rate')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1.50×'));
+    await _pumpUntil(
+      tester,
+      () => harness.state.channels
+          .firstWhere((channel) => channel.id == _channelA)
+          .defaultPlaybackRate == 1.5,
+      reason: 'la velocità del canale deve essere salvata',
+    );
+
+    await tester.tap(find.byKey(const Key('channel-play-aa2')));
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const Key('player-page')).evaluate().isNotEmpty,
+      reason: 'il player deve aprirsi',
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text('1.50×').evaluate().isNotEmpty,
+      reason: 'il player deve usare la velocità del canale',
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('lo stream non disponibile è un errore recuperabile', (
     tester,
   ) async {
@@ -324,6 +398,24 @@ void main() {
     expect(find.text('Apri su YouTube'), findsOneWidget);
     expect(find.byKey(const Key('seek-back-button')), findsOneWidget);
     expect(find.byKey(const Key('seek-forward-button')), findsOneWidget);
+
+    // Timestamped chapters and personal bookmarks.
+    await tester.tap(find.byKey(const Key('chapters-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('outline-dialog')), findsOneWidget);
+    expect(find.text('Intro'), findsOneWidget);
+    expect(find.text('Argomento'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('outline-add-bookmark')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('bookmark-note-field')),
+      'Nota di test',
+    );
+    await tester.tap(find.byKey(const Key('bookmark-note-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Nota di test'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('outline-close')));
+    await tester.pumpAndSettle();
 
     // Playback speed: 0.25×–3.50× in 0.25 steps.
     await tester.tap(find.byKey(const Key('speed-button')));
@@ -420,7 +512,7 @@ Future<http.Response> _handleRequest(http.Request request) async {
           _VideoFixture(
             id: 'aa2',
             title: 'Video A due',
-            description: 'Descrizione A due',
+            description: 'Descrizione A due\n00:00 Intro\n00:10 Argomento',
             published: '2026-11-03T10:00:00+00:00',
           ),
         ],

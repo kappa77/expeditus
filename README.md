@@ -25,7 +25,9 @@ One row per channel. The latest video. That is the whole feed.
 - **Local-first:** subscriptions, watch state, queue, and settings stay on your computer. No Google login.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
-- **Playback speed** from 0.25× to 3.50× in 0.25 steps.
+- **Playback speed** from 0.25× to 3.50× in 0.25 steps, with an optional default speed per channel.
+- **Chapters and timestamped bookmarks:** jump to description chapters or save a bookmark at the current second with a personal note.
+- **Refresh only one channel** from its page, without waiting for the whole subscription feed.
 - **±10 second seeking** with debounce: several quick presses become one combined jump.
 - **Keyboard-first:** move, open, mark watched, queue, search, and refresh without touching the mouse.
 - **Focus mode:** hide descriptions and keep only channel and title.

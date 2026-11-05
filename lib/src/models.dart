@@ -9,6 +9,7 @@ class Channel {
     this.lastChecked,
     this.muted = false,
     this.showInLatest = true,
+    this.defaultPlaybackRate,
     this.error,
   });
 
@@ -19,6 +20,7 @@ class Channel {
   final int? lastChecked;
   final bool muted;
   final bool showInLatest;
+  final double? defaultPlaybackRate;
   final String? error;
 
   String get displayTitle => title.trim().isEmpty ? id : title;
@@ -32,6 +34,7 @@ class Channel {
       lastChecked: map['last_checked'] as int?,
       muted: (map['muted'] as int?) == 1,
       showInLatest: (map['show_in_latest'] as int?) != 0,
+      defaultPlaybackRate: (map['default_playback_rate'] as num?)?.toDouble(),
       error: map['error'] as String?,
     );
   }
@@ -45,6 +48,7 @@ class Channel {
       'last_checked': lastChecked,
       'muted': muted ? 1 : 0,
       'show_in_latest': showInLatest ? 1 : 0,
+      'default_playback_rate': defaultPlaybackRate,
       'error': error,
     };
   }
@@ -69,6 +73,8 @@ class VideoItem {
     this.downloadStatus = 'none',
     this.downloadedAt,
     this.downloadError,
+    this.chapters = const [],
+    this.chaptersFetched = false,
   });
 
   final String id;
@@ -102,6 +108,12 @@ class VideoItem {
   final int? downloadedAt;
   final String? downloadError;
 
+  /// Chapters parsed from the video description.
+  final List<VideoChapter> chapters;
+
+  /// True once a chapter lookup has been attempted and stored.
+  final bool chaptersFetched;
+
   bool get isDownloaded => localPath != null && downloadStatus == 'ready';
   bool get isDownloading => downloadStatus == 'downloading';
 
@@ -128,6 +140,8 @@ class VideoItem {
     String? downloadStatus,
     int? downloadedAt,
     String? downloadError,
+    List<VideoChapter>? chapters,
+    bool? chaptersFetched,
   }) {
     return VideoItem(
       id: id,
@@ -147,6 +161,8 @@ class VideoItem {
       downloadStatus: downloadStatus ?? this.downloadStatus,
       downloadedAt: downloadedAt ?? this.downloadedAt,
       downloadError: downloadError ?? this.downloadError,
+      chapters: chapters ?? this.chapters,
+      chaptersFetched: chaptersFetched ?? this.chaptersFetched,
     );
   }
 
@@ -169,7 +185,23 @@ class VideoItem {
       downloadStatus: (map['download_status'] as String?) ?? 'none',
       downloadedAt: map['downloaded_at'] as int?,
       downloadError: map['download_error'] as String?,
+      chapters: _parseChapters(map['chapters']),
+      chaptersFetched: (map['chapters_fetched'] as int?) == 1,
     );
+  }
+
+  static List<VideoChapter> _parseChapters(Object? value) {
+    if (value is! String || value.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((entry) => VideoChapter.fromJson(entry))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   static List<String> _parseKeywords(Object? value) {
@@ -216,4 +248,50 @@ class SponsorSegment {
   final Duration start;
   final Duration end;
   final String category;
+}
+
+
+class VideoChapter {
+  const VideoChapter({required this.startSeconds, required this.title});
+
+  final int startSeconds;
+  final String title;
+
+  factory VideoChapter.fromJson(Map<dynamic, dynamic> json) {
+    return VideoChapter(
+      startSeconds: (json['start'] as num?)?.toInt() ?? 0,
+      title: (json['title'] as String?) ?? '',
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+        'start': startSeconds,
+        'title': title,
+      };
+}
+
+class VideoBookmark {
+  const VideoBookmark({
+    required this.id,
+    required this.videoId,
+    required this.positionSeconds,
+    required this.note,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String videoId;
+  final int positionSeconds;
+  final String note;
+  final int createdAt;
+
+  factory VideoBookmark.fromMap(Map<String, Object?> map) {
+    return VideoBookmark(
+      id: (map['id'] as int?) ?? 0,
+      videoId: (map['video_id'] as String?) ?? '',
+      positionSeconds: (map['position_seconds'] as int?) ?? 0,
+      note: (map['note'] as String?) ?? '',
+      createdAt: (map['created_at'] as int?) ?? 0,
+    );
+  }
 }

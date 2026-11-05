@@ -12,24 +12,9 @@ import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/playback_rates.dart';
 import '../util/seek_accumulator.dart';
-
-const _playbackRates = <double>[
-  0.25,
-  0.50,
-  0.75,
-  1.00,
-  1.25,
-  1.50,
-  1.75,
-  2.00,
-  2.25,
-  2.50,
-  2.75,
-  3.00,
-  3.25,
-  3.50,
-];
+import 'video_outline_dialog.dart';
 
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
@@ -64,6 +49,8 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _speedMenuOpen = false;
   late double _rate;
   late final SeekAccumulator _seekAccumulator;
+  List<VideoChapter> _chapters = const [];
+  bool _chaptersLoaded = false;
 
   @override
   void initState() {
@@ -71,7 +58,7 @@ class _PlayerPageState extends State<PlayerPage> {
     MediaKit.ensureInitialized();
     HardwareKeyboard.instance.addHandler(_handleGlobalKey);
     _player = Player();
-    _rate = widget.state.playbackRate;
+    _rate = _initialPlaybackRate();
     _seekAccumulator = SeekAccumulator(
       debounce: const Duration(milliseconds: 300),
       onSeek: (target) {
@@ -99,6 +86,62 @@ class _PlayerPageState extends State<PlayerPage> {
     );
 
     unawaited(_open());
+    unawaited(_loadChapters());
+  }
+
+  double _initialPlaybackRate() {
+    for (final channel in widget.state.channels) {
+      if (channel.id == widget.video.channelId) {
+        return channel.defaultPlaybackRate ?? widget.state.playbackRate;
+      }
+    }
+    return widget.state.playbackRate;
+  }
+
+  Future<void> _loadChapters() async {
+    if (widget.video.chapters.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _chapters = widget.video.chapters;
+          _chaptersLoaded = true;
+        });
+      }
+      return;
+    }
+    final chapters = await widget.state.fetchVideoChapters(widget.video);
+    if (!mounted) return;
+    setState(() {
+      _chapters = chapters;
+      _chaptersLoaded = true;
+    });
+  }
+
+  Future<void> _showOutline() async {
+    if (!_chaptersLoaded) await _loadChapters();
+    if (!mounted) return;
+    final target = await showDialog<Duration>(
+      context: context,
+      builder: (_) => VideoOutlineDialog(
+        video: widget.video,
+        chapters: _chapters,
+        position: _player.state.position,
+        state: widget.state,
+      ),
+    );
+    if (target != null && _ready) {
+      await _player.seek(target);
+    }
+  }
+
+  Future<void> _addBookmark() async {
+    final note = await showBookmarkNoteDialog(context);
+    if (note == null || note.isEmpty) return;
+    await widget.state.addBookmark(
+      widget.video.id,
+      _player.state.position.inSeconds,
+      note,
+    );
+    _toast('Segnalibro salvato');
   }
 
   Future<void> _open() async {
@@ -248,7 +291,19 @@ class _PlayerPageState extends State<PlayerPage> {
     final rate = value.clamp(0.25, 3.5).toDouble();
     setState(() => _rate = rate);
     if (_ready) unawaited(_player.setRate(rate));
-    unawaited(widget.state.setPlaybackRate(rate));
+
+    Channel? channel;
+    for (final item in widget.state.channels) {
+      if (item.id == widget.video.channelId) {
+        channel = item;
+        break;
+      }
+    }
+    if (channel?.defaultPlaybackRate != null) {
+      unawaited(widget.state.setChannelPlaybackRate(channel!.id, rate));
+    } else {
+      unawaited(widget.state.setPlaybackRate(rate));
+    }
   }
 
   @override
@@ -268,6 +323,18 @@ class _PlayerPageState extends State<PlayerPage> {
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
         actions: [
+          IconButton(
+            key: const Key('chapters-button'),
+            tooltip: 'Capitoli e segnalibri',
+            onPressed: _showOutline,
+            icon: const Icon(Icons.format_list_bulleted_rounded),
+          ),
+          IconButton(
+            key: const Key('bookmark-add-button'),
+            tooltip: 'Aggiungi segnalibro con nota',
+            onPressed: _addBookmark,
+            icon: const Icon(Icons.bookmark_add_outlined),
+          ),
           PopupMenuButton<double>(
             key: const Key('speed-button'),
             tooltip: 'Velocità di riproduzione',
@@ -280,7 +347,7 @@ class _PlayerPageState extends State<PlayerPage> {
             },
             constraints: const BoxConstraints(maxHeight: 360),
             itemBuilder: (context) => [
-              for (final rate in _playbackRates)
+              for (final rate in playbackRates)
                 PopupMenuItem<double>(
                   value: rate,
                   child: Text('${rate.toStringAsFixed(2)}×'),

@@ -33,7 +33,7 @@ class VideoRow extends StatefulWidget {
 class _VideoRowState extends State<VideoRow> {
   bool _hovered = false;
 
-  static const _rowHeight = 104.0;
+  static const _rowHeight = 112.0;
 
   @override
   Widget build(BuildContext context) {

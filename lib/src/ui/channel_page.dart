@@ -8,6 +8,7 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/playback_rates.dart';
 import 'player_page.dart';
 
 class ChannelPage extends StatefulWidget {
@@ -158,6 +159,16 @@ class _ChannelPageState extends State<ChannelPage>
     if (mounted) setState(() {});
   }
 
+  Future<void> _refreshOnly() async {
+    await widget.state.refreshChannel(widget.channel.id);
+    if (mounted) await _reload();
+  }
+
+  Future<void> _setDefaultRate(double? rate) async {
+    await widget.state.setChannelPlaybackRate(widget.channel.id, rate);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _download(VideoItem video) async {
     await widget.state.downloadVideo(video);
     if (mounted) await _reload();
@@ -226,10 +237,14 @@ class _ChannelPageState extends State<ChannelPage>
                   loadingTags: _loadingTags,
                   muted: channel.muted,
                   showInLatest: channel.showInLatest,
+                  defaultPlaybackRate: channel.defaultPlaybackRate,
+                  refreshing: widget.state.refreshing,
                   search: _search,
                   onSearch: (value) => setState(() => _query = value),
                   onToggleMute: _toggleMute,
                   onToggleShowInLatest: _toggleShowInLatest,
+                  onSetDefaultRate: _setDefaultRate,
+                  onRefresh: _refreshOnly,
                   onBack: () => Navigator.of(context).pop(),
                 ),
                 Container(
@@ -306,10 +321,14 @@ class _ChannelHeader extends StatelessWidget {
     required this.loadingTags,
     required this.muted,
     required this.showInLatest,
+    required this.defaultPlaybackRate,
+    required this.refreshing,
     required this.search,
     required this.onSearch,
     required this.onToggleMute,
     required this.onToggleShowInLatest,
+    required this.onSetDefaultRate,
+    required this.onRefresh,
     required this.onBack,
   });
 
@@ -318,10 +337,14 @@ class _ChannelHeader extends StatelessWidget {
   final bool loadingTags;
   final bool muted;
   final bool showInLatest;
+  final double? defaultPlaybackRate;
+  final bool refreshing;
   final TextEditingController search;
   final ValueChanged<String> onSearch;
   final VoidCallback onToggleMute;
   final VoidCallback onToggleShowInLatest;
+  final ValueChanged<double?> onSetDefaultRate;
+  final VoidCallback onRefresh;
   final VoidCallback onBack;
 
   @override
@@ -373,6 +396,18 @@ class _ChannelHeader extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                key: const Key('channel-refresh-only'),
+                tooltip: 'Aggiorna solo questo canale',
+                onPressed: refreshing ? null : onRefresh,
+                icon: refreshing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
               ),
               if (loadingTags) ...[
                 const SizedBox(
@@ -478,6 +513,68 @@ class _ChannelHeader extends StatelessWidget {
                     color: showInLatest
                         ? ExpeditusColors.accent
                         : ExpeditusColors.border,
+                  ),
+                ),
+              ),
+              Tooltip(
+                message: 'Velocità predefinita quando apri i video di questo canale.',
+                child: PopupMenuButton<double?>(
+                  key: const Key('channel-playback-rate'),
+                  tooltip: 'Velocità predefinita del canale',
+                  onSelected: (value) => onSetDefaultRate(
+                    value == null || value < 0 ? null : value,
+                  ),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem<double?>(
+                      value: -1.0,
+                      child: Text('Globale'),
+                    ),
+                    for (final rate in playbackRates)
+                      PopupMenuItem<double?>(
+                        value: rate,
+                        child: Text('${rate.toStringAsFixed(2)}×'),
+                      ),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: defaultPlaybackRate == null
+                          ? ExpeditusColors.surface
+                          : ExpeditusColors.accentSoft,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: defaultPlaybackRate == null
+                            ? ExpeditusColors.border
+                            : ExpeditusColors.accent,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.speed_rounded,
+                          size: 16,
+                          color: defaultPlaybackRate == null
+                              ? ExpeditusColors.muted
+                              : ExpeditusColors.accent,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          defaultPlaybackRate == null
+                              ? 'Velocità globale'
+                              : 'Velocità ${defaultPlaybackRate!.toStringAsFixed(2)}×',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: defaultPlaybackRate == null
+                                ? ExpeditusColors.muted
+                                : ExpeditusColors.accent,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -8,9 +8,11 @@ import '../models.dart';
 import '../services/import_service.dart';
 import '../services/rss_service.dart';
 import '../services/sponsorblock_service.dart';
+import '../services/video_chapters_service.dart';
 import '../services/video_download_service.dart';
 import '../services/video_link_service.dart';
 import '../services/video_tags_service.dart';
+import '../util/chapter_parser.dart';
 
 double _snapPlaybackRate(double value) {
   final clamped = value.clamp(0.25, 3.5).toDouble();
@@ -27,12 +29,14 @@ class AppState extends ChangeNotifier {
     VideoTagsProvider? tags,
     VideoDownloader? downloader,
     VideoLinkService? videoLink,
+    VideoChaptersProvider? chapterService,
   })  : rss = rss ?? RssService(),
         resolver = resolver ?? YouTubeResolver(),
         sponsorBlock = sponsorBlock ?? SponsorBlockService(),
         tags = tags ?? VideoTagsService(),
         downloader = downloader ?? VideoDownloadService(),
-        videoLink = videoLink ?? VideoLinkService();
+        videoLink = videoLink ?? VideoLinkService(),
+        chapterService = chapterService ?? VideoChaptersService();
 
   final AppDatabase db;
   final RssService rss;
@@ -41,6 +45,7 @@ class AppState extends ChangeNotifier {
   final VideoTagsProvider tags;
   final VideoDownloader downloader;
   final VideoLinkService videoLink;
+  final VideoChaptersProvider chapterService;
 
   List<Channel> channels = [];
   List<VideoItem> latest = [];
@@ -367,6 +372,72 @@ class AppState extends ChangeNotifier {
     await reload();
   }
 
+  Future<void> setChannelPlaybackRate(String id, double? rate) async {
+    await db.setChannelPlaybackRate(
+      id,
+      rate == null ? null : _snapPlaybackRate(rate),
+    );
+    await reload();
+  }
+
+  Future<void> refreshChannel(String id) async {
+    if (refreshing || _disposed) return;
+    final channel = channels.firstWhere((item) => item.id == id);
+    refreshing = true;
+    error = null;
+    _notify();
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await _refreshChannel(channel, now);
+    } catch (e) {
+      error = _shortError(e);
+    }
+
+    lastRefresh = DateTime.now();
+    refreshing = false;
+    await reload();
+    _notify();
+  }
+
+  Future<List<VideoChapter>> fetchVideoChapters(VideoItem video) async {
+    if (video.chapters.isNotEmpty || video.chaptersFetched) {
+      return video.chapters;
+    }
+
+    final local = ChapterParser.parse(video.description);
+    if (local.isNotEmpty) {
+      await db.setChapters(video.id, local);
+      return local;
+    }
+
+    try {
+      final chapters = await chapterService.fetch(video.id);
+      await db.setChapters(video.id, chapters);
+      return chapters;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<VideoBookmark>> bookmarksForVideo(String videoId) {
+    return db.bookmarksForVideo(videoId);
+  }
+
+  Future<void> addBookmark(
+    String videoId,
+    int positionSeconds,
+    String note,
+  ) async {
+    await db.addBookmark(videoId, positionSeconds, note);
+    _notify();
+  }
+
+  Future<void> deleteBookmark(int id) async {
+    await db.deleteBookmark(id);
+    _notify();
+  }
+
   Future<ImportResult> importCsv(String content) async {
     final parsed = TakeoutParser.parse(content);
     return _import(parsed);
@@ -595,6 +666,7 @@ class AppState extends ChangeNotifier {
     tags.close();
     downloader.close();
     videoLink.close();
+    chapterService.close();
     super.dispose();
   }
 }

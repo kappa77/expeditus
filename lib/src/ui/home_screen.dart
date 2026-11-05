@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  static const double _rowHeight = 104;
+  static const double _rowHeight = 112;
 
   @override
   void initState() {

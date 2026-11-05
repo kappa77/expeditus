@@ -43,11 +43,14 @@ Key modules:
 | `lib/src/services/import_service.dart` | Google Takeout CSV and channel handle/URL resolution |
 | `lib/src/services/channel_search_service.dart` | YouTube channel search by keyword |
 | `lib/src/services/video_tags_service.dart` | Lazy `videoDetails.keywords` fetch |
+| `lib/src/services/video_chapters_service.dart` | Full-description chapter fetch |
 | `lib/src/services/video_download_service.dart` | Muxed-stream download to the local app data folder |
 | `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
 | `lib/src/services/stream_resolver.dart` | Direct media stream resolution |
 | `lib/src/services/sponsorblock_service.dart` | SponsorBlock segment lookup |
 | `lib/src/util/seek_accumulator.dart` | Debounced compound seeking |
+| `lib/src/util/chapter_parser.dart` | Timestamped chapter parsing |
+| `lib/src/util/playback_rates.dart` | Shared speed steps |
 | `lib/src/version.dart` | Build-time version injected by the release pipeline |
 
 ## Data sources
@@ -76,11 +79,12 @@ SQLite database: `expeditus.sqlite`, in the application support directory.
 
 Tables:
 
-- `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, last error.
-- `videos`: id, channel, title, description, publication time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error.
+- `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, optional default playback rate, last error.
+- `videos`: id, channel, title, description, publication time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag.
+- `bookmarks`: id, video id, position seconds, personal note, creation time.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. All use `ALTER TABLE` migrations.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. All use `ALTER TABLE` migrations.
 
 ## Playback and ad avoidance
 
@@ -91,8 +95,19 @@ When a video has a local download, the player opens the local file and labels th
 SponsorBlock segments are fetched from `sponsor.ajay.app` and skipped during playback. The player also supports:
 
 - playback speed from 0.25× to 3.50× in 0.25 steps, persisted in `settings`;
+- an optional per-channel default speed (`channels.default_playback_rate`); the channel page sets it, and the player falls back to the global speed when it is null;
 - `±10 s` seeking with a 300 ms debounce, so rapid presses compound into one seek;
 - keyboard shortcuts `←` / `→` and `J` / `L` while the player is open.
+
+### Chapters and bookmarks
+
+Chapters are parsed from the video description with timestamp lines such as `00:00 Intro` (at least two entries). If the stored description has no chapters, the player fetches the full description with `youtube_explode_dart` and caches the parsed chapters in `videos.chapters`. The outline dialog lists chapters and personal bookmarks; both jump to their timestamp.
+
+Bookmarks are stored in the `bookmarks` table with a second offset and a free-form personal note. They can be added from the outline dialog or from the player AppBar at the current position; they are local only and are deleted with their video row.
+
+### Per-channel refresh
+
+The channel page refresh button calls `AppState.refreshChannel`, which fetches only that channel's RSS feed and then reloads the feed and the open channel page. It can be used even when the channel RSS is muted.
 
 ### Channel page
 
@@ -194,7 +209,8 @@ The app footer reads `kAppVersion` from `lib/src/version.dart`, with a developme
 flutter test
 
 # Deterministic desktop E2E: onboarding, import, feed, channel archive/history,
-# tags, filters, offline download, player error, speed
+# tags, filters, offline download, chapters/bookmarks, per-channel speed,
+# refresh-only-channel, player error
 flutter test integration_test -d windows
 
 # Live network E2E: @antirez feed, channel search, video link + auto-subscribe
@@ -207,6 +223,7 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - The fallback muxed stream is limited to 360p; HLS is used when available. 1080p/4K would require an optional yt-dlp/ffmpeg resolver.
 - Tags are not available for every video and cost one watch-page request per uncached video.
 - Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
+- Chapters depend on timestamps in the description; videos without timestamped descriptions have no chapters. The outline captures the playback position when it is opened for new bookmarks.
 - Channel history records the first time a video was opened or marked watched; toggling watched off does not erase the history entry.
 - Shorts and live streams are not filtered separately.
 - SSAI can eventually put ads inside direct streams; the current approach is not future-proof.
