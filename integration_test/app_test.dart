@@ -110,6 +110,8 @@ void main() {
       () => harness.state.hideDescriptions,
       reason: 'l’interruttore deve aggiornare lo stato',
     );
+    await tester.ensureVisible(find.text('Fatto'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Fatto'));
     await tester.pumpAndSettle();
     expect(find.text('Descrizione A due'), findsNothing);
