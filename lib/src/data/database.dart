@@ -1,0 +1,306 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../models.dart';
+
+class AppDatabase {
+  AppDatabase({this.pathOverride});
+
+  /// Used by integration tests to point at a temporary database.
+  final String? pathOverride;
+
+  Database? _db;
+
+  Future<Database> get database async {
+    if (_db != null) return _db!;
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+
+    final support = await getApplicationSupportDirectory();
+    await Directory(support.path).create(recursive: true);
+    final path = pathOverride ?? p.join(support.path, 'expeditus.sqlite');
+
+    _db = await databaseFactory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 2,
+        onConfigure: (db) async {
+          await db.execute('PRAGMA foreign_keys = ON');
+          await db.execute('PRAGMA journal_mode = WAL');
+        },
+        onCreate: (db, version) async {
+          await db.execute('''
+            CREATE TABLE channels (
+              id TEXT PRIMARY KEY,
+              title TEXT NOT NULL DEFAULT '',
+              handle TEXT,
+              added_at INTEGER NOT NULL,
+              last_checked INTEGER,
+              muted INTEGER NOT NULL DEFAULT 0,
+              error TEXT
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE videos (
+              id TEXT PRIMARY KEY,
+              channel_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              published_at INTEGER NOT NULL,
+              duration_seconds INTEGER,
+              status TEXT NOT NULL DEFAULT 'new',
+              queued INTEGER NOT NULL DEFAULT 0,
+              progress_seconds INTEGER NOT NULL DEFAULT 0,
+              fetched_at INTEGER NOT NULL,
+              keywords TEXT,
+              keywords_fetched INTEGER NOT NULL DEFAULT 0,
+              FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+            )
+          ''');
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_id)',
+          );
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC)',
+          );
+          await db.execute('''
+            CREATE TABLE settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            )
+          ''');
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute('ALTER TABLE videos ADD COLUMN keywords TEXT');
+            await db.execute(
+              'ALTER TABLE videos ADD COLUMN keywords_fetched INTEGER NOT NULL DEFAULT 0',
+            );
+          }
+        },
+      ),
+    );
+    return _db!;
+  }
+
+  Future<void> open() async {
+    await database;
+  }
+
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+
+  Future<List<Channel>> getChannels() async {
+    final db = await database;
+    final rows = await db.query('channels', orderBy: 'title COLLATE NOCASE');
+    return rows.map(Channel.fromMap).toList();
+  }
+
+  Future<void> upsertChannel(Channel channel) async {
+    final db = await database;
+    await db.rawInsert(
+      '''
+      INSERT INTO channels (id, title, handle, added_at, last_checked, muted, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title = CASE
+          WHEN excluded.title <> '' THEN excluded.title
+          ELSE channels.title
+        END,
+        handle = COALESCE(excluded.handle, channels.handle)
+      ''',
+      [
+        channel.id,
+        channel.title,
+        channel.handle,
+        channel.addedAt,
+        channel.lastChecked,
+        channel.muted ? 1 : 0,
+        channel.error,
+      ],
+    );
+  }
+
+  Future<void> updateChannelFetch(
+    String id, {
+    required String title,
+    required int lastChecked,
+    String? error,
+  }) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {
+        if (title.trim().isNotEmpty) 'title': title,
+        'last_checked': lastChecked,
+        'error': error,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> setChannelMuted(String id, bool muted) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {'muted': muted ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> deleteChannel(String id) async {
+    final db = await database;
+    await db.delete('channels', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> upsertVideo(VideoItem video) async {
+    final db = await database;
+    await db.rawInsert(
+      '''
+      INSERT INTO videos (
+        id, channel_id, title, description, published_at,
+        duration_seconds, status, queued, progress_seconds, fetched_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title = excluded.title,
+        description = excluded.description,
+        published_at = excluded.published_at,
+        duration_seconds = COALESCE(excluded.duration_seconds, videos.duration_seconds),
+        fetched_at = excluded.fetched_at
+      ''',
+      [
+        video.id,
+        video.channelId,
+        video.title,
+        video.description,
+        video.publishedAt,
+        video.durationSeconds,
+        video.status,
+        video.queued ? 1 : 0,
+        video.progressSeconds,
+        DateTime.now().millisecondsSinceEpoch,
+      ],
+    );
+  }
+
+  /// One row per channel: the most recent video.
+  Future<List<VideoItem>> latestPerChannel() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT v.*, c.title AS channel_title
+      FROM videos v
+      JOIN channels c ON c.id = v.channel_id
+      WHERE v.id IN (
+        SELECT id FROM (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY channel_id
+                   ORDER BY published_at DESC, id DESC
+                 ) AS rn
+          FROM videos
+        )
+        WHERE rn = 1
+      )
+      AND c.muted = 0
+      ORDER BY v.published_at DESC
+    ''');
+    return rows.map(VideoItem.fromMap).toList();
+  }
+
+  Future<List<VideoItem>> queue() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT v.*, c.title AS channel_title
+      FROM videos v
+      JOIN channels c ON c.id = v.channel_id
+      WHERE v.queued = 1
+      ORDER BY v.published_at DESC
+    ''');
+    return rows.map(VideoItem.fromMap).toList();
+  }
+
+  Future<List<VideoItem>> videosForChannel(String channelId) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT v.*, c.title AS channel_title
+      FROM videos v
+      JOIN channels c ON c.id = v.channel_id
+      WHERE v.channel_id = ?
+      ORDER BY v.published_at DESC
+      LIMIT 50
+      ''',
+      [channelId],
+    );
+    return rows.map(VideoItem.fromMap).toList();
+  }
+
+  Future<void> setStatus(String videoId, String status) async {
+    final db = await database;
+    await db.update(
+      'videos',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [videoId],
+    );
+  }
+
+  Future<void> setQueued(String videoId, bool queued) async {
+    final db = await database;
+    await db.update(
+      'videos',
+      {'queued': queued ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [videoId],
+    );
+  }
+
+  Future<void> setProgress(String videoId, int seconds) async {
+    final db = await database;
+    await db.update(
+      'videos',
+      {'progress_seconds': seconds},
+      where: 'id = ?',
+      whereArgs: [videoId],
+    );
+  }
+
+  Future<void> setKeywords(String videoId, List<String> keywords) async {
+    final db = await database;
+    await db.update(
+      'videos',
+      {
+        'keywords': jsonEncode(keywords),
+        'keywords_fetched': 1,
+      },
+      where: 'id = ?',
+      whereArgs: [videoId],
+    );
+  }
+
+  Future<Map<String, String>> getSettings() async {
+    final db = await database;
+    final rows = await db.query('settings');
+    return {
+      for (final row in rows) row['key'] as String: row['value'] as String,
+    };
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    final db = await database;
+    await db.insert(
+      'settings',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+}
