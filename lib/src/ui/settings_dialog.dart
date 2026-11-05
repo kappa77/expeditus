@@ -158,6 +158,32 @@ class SettingsDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => showLicensePage(
+                        context: context,
+                        applicationName: 'Expeditus',
+                        applicationVersion: '1.0.0',
+                        applicationLegalese: 'MIT License',
+                      ),
+                      icon: const Icon(
+                        Icons.description_outlined,
+                        size: 16,
+                      ),
+                      label: const Text('Licenze open source'),
+                    ),
+                  ),
+                  const Text(
+                    'Le licenze dei componenti nativi (libmpv, ANGLE, SQLite) '
+                    'sono in THIRD_PARTY_NOTICES.md nella cartella di installazione.',
+                    style: TextStyle(
+                      color: ExpeditusColors.muted,
+                      fontSize: 10.5,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () => Navigator.of(context).pop(),

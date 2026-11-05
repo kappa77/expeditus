@@ -12,7 +12,7 @@ La riproduzione usa stream diretti (nessun player YouTube), quindi non passa dal
 
 **Expeditus** is a Flutter desktop app that turns YouTube subscriptions into a quiet, text-first inbox. It shows only the latest upload from each channel, with no algorithmic home, no recommendations, no autoplay, and no thumbnails. It reads public RSS feeds (no Google login, no API quota), stores everything locally, and plays videos through direct streams with libmpv instead of the YouTube player. It also includes a channel archive with keyword and tag filters, SponsorBlock, playback speed from 0.25× to 3.50×, and debounced ±10-second seeking.
 
-Released under the **MIT License**.
+Released under the **MIT License**. The Windows build bundles libmpv, which is **GPL-2.0-or-later**; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for notices and the source offer.
 
 ## Cosa fa
 
@@ -127,6 +127,16 @@ test/
 
 ## Licenza
 
-MIT — vedi [LICENSE](LICENSE).
+Il codice di Expeditus è distribuito con licenza **MIT** — vedi [LICENSE](LICENSE).
 
-Le dipendenze mantengono le proprie licenze. In particolare `media_kit`, `libmpv` e gli archivi scaricati da `tool/fetch_windows_deps.ps1` hanno licenze proprie.
+Le release Windows includono anche componenti nativi con licenze proprie:
+
+- **libmpv / FFmpeg** — GPL-2.0-or-later
+- **ANGLE** — BSD-3-Clause
+- **SwiftShader / Vulkan loader** — Apache-2.0
+- **SQLite** — public domain
+- **Flutter engine** — BSD-3-Clause
+
+Trovi l'elenco completo, i testi delle licenze e l'offerta di sorgente GPL in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) e nella cartella [LICENSES](LICENSES). L'app mostra le licenze dei pacchetti Dart/Flutter da **Impostazioni → Licenze open source**.
+
+> MIT e GPL-2.0 sono compatibili, ma un installer che include libmpv deve rispettare gli obblighi GPL per quel componente. Se vuoi una release interamente permissiva, va sostituito il backend libmpv con una build LGPL o un altro player.
