@@ -46,6 +46,12 @@ YouTube sta sperimentando la **server-side ad insertion (SSAI)**: gli annunci ve
 
 L'uso di client di terze parti può violare i Termini di servizio di YouTube. Usa Expeditus per contenuti che hai diritto a guardare e sostieni i creator quando puoi.
 
+## Installazione (Windows)
+
+Scarica **`ExpeditusSetup-x.y.z.exe`** dalla pagina [Releases](https://github.com/kappa77/expeditus/releases), avvialo e segui il wizard. Non serve scompattare nulla e non serve l'amministratore: l'installazione è per-utente in `%LOCALAPPDATA%\Programs\Expeditus`, con collegamenti nel menu Start e disinstallazione da **Impostazioni → App**.
+
+L'installer è fatto con **NSIS** (licenza zlib/libpng, nessun EULA aggiuntivo). Include le licenze MIT, le note third-party e l'offerta di sorgente GPL per libmpv. Al momento non è firmato con un certificato di code signing: Windows SmartScreen può mostrare un avviso.
+
 ## Avvio (Windows)
 
 ```powershell
@@ -57,6 +63,26 @@ flutter run -d windows
 `tool/fetch_windows_deps.ps1` scarica gli archivi precompilati di libmpv e ANGLE usati da `media_kit` e ne verifica l'MD5. Serve perché il download diretto da GitHub può rispondere `504`; lo script usa un mirror come fallback. L'archivio viene messo in `build/windows/x64/`, dove la build CMake lo trova e lo verifica.
 
 > `windows/CMakeLists.txt` forza `CMAKE_INSTALL_PREFIX` accanto all'eseguibile. Senza questa correzione, con alcune combinazioni Visual Studio/CMake l'install step prova a scrivere in `C:/Program Files/expeditus` e richiede privilegi di amministratore.
+
+### Installer locale
+
+Serve NSIS 3 (`choco install nsis`, oppure <https://nsis.sourceforge.io/>). Poi:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool/build_installer.ps1
+```
+
+Lo script legge la versione da `pubspec.yaml`, compila `flutter build windows --release`, genera `dist/ExpeditusSetup-x.y.z.exe` e `dist/SHA256SUMS.txt`. Con `-SkipFlutterBuild` riusa la build già presente.
+
+## Release
+
+La release è automatica via GitHub Actions (`.github/workflows/release.yml`):
+
+1. Aggiorna `version:` in `pubspec.yaml`.
+2. Commit e push.
+3. Crea e pusha un tag che corrisponde alla versione, per esempio:
+   `git tag v1.0.0 && git push origin v1.0.0`.
+4. Il workflow compila Flutter, scarica libmpv/ANGLE, installa NSIS, crea l'installer, calcola lo SHA-256 e pubblica la release con installer e checksum.
 
 ## Test
 
@@ -105,6 +131,10 @@ lib/
     ui/settings_dialog.dart
     ui/channel_page.dart
     ui/player_page.dart
+installer/
+  expeditus.nsi
+.github/
+  workflows/release.yml
 integration_test/
   app_test.dart
 integration_test_live/
