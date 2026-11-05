@@ -70,6 +70,7 @@ class ChannelsView extends StatelessWidget {
         return _ChannelRow(
           channel: channel,
           onMute: () => state.toggleMute(channel.id),
+          onToggleShow: () => state.toggleShowInLatest(channel.id),
           onDelete: () => _confirmDelete(context, channel),
           onOpen: () => onOpenChannel(channel.id),
         );
@@ -108,12 +109,14 @@ class _ChannelRow extends StatelessWidget {
   const _ChannelRow({
     required this.channel,
     required this.onMute,
+    required this.onToggleShow,
     required this.onDelete,
     required this.onOpen,
   });
 
   final Channel channel;
   final VoidCallback onMute;
+  final VoidCallback onToggleShow;
   final VoidCallback onDelete;
   final VoidCallback onOpen;
 

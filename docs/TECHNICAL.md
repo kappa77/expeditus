@@ -76,11 +76,11 @@ SQLite database: `expeditus.sqlite`, in the application support directory.
 
 Tables:
 
-- `channels`: id, title, handle, added time, last check, muted flag, last error.
+- `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, last error.
 - `videos`: id, channel, title, description, publication time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Both use `ALTER TABLE` migrations.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. All use `ALTER TABLE` migrations.
 
 ## Playback and ad avoidance
 
@@ -101,7 +101,12 @@ The channel page has two tabs:
 - **Video** — the stored archive (up to 50 videos from the database, newest first), with filters and search.
 - **Cronologia** — every video opened or marked watched for that channel, ordered by `watched_at` and grouped by watched month.
 
-The **Silenzia RSS** action uses the existing channel `muted` flag: Expeditus stops refreshing that feed and removes the channel from the main latest feed, while the archive and history stay accessible. Unmuting resumes normal refreshes.
+The channel page has two independent visibility controls:
+
+- **Silenzia RSS** (`channels.muted`): Expeditus stops refreshing that feed and hides new items from the channel page. Archive and history stay accessible. Unmuting resumes normal refreshes.
+- **Mostra in novità** (`channels.show_in_latest`): controls whether the channel's latest video appears in the main **latest/New** list. The channel keeps refreshing and remains reachable from **Canali**; turning it off is useful for archive-only subscriptions.
+
+`latestPerChannel()` requires both `muted = 0` and `show_in_latest = 1`.
 
 ### Offline downloads
 

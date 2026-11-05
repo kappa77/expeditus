@@ -27,7 +27,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -41,6 +41,7 @@ class AppDatabase {
               added_at INTEGER NOT NULL,
               last_checked INTEGER,
               muted INTEGER NOT NULL DEFAULT 0,
+              show_in_latest INTEGER NOT NULL DEFAULT 1,
               error TEXT
             )
           ''');
@@ -95,6 +96,11 @@ class AppDatabase {
             await db.execute('ALTER TABLE videos ADD COLUMN downloaded_at INTEGER');
             await db.execute('ALTER TABLE videos ADD COLUMN download_error TEXT');
           }
+          if (oldVersion < 4) {
+            await db.execute(
+              'ALTER TABLE channels ADD COLUMN show_in_latest INTEGER NOT NULL DEFAULT 1',
+            );
+          }
         },
       ),
     );
@@ -120,8 +126,10 @@ class AppDatabase {
     final db = await database;
     await db.rawInsert(
       '''
-      INSERT INTO channels (id, title, handle, added_at, last_checked, muted, error)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO channels (
+        id, title, handle, added_at, last_checked, muted, show_in_latest, error
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = CASE
           WHEN excluded.title <> '' THEN excluded.title
@@ -136,6 +144,7 @@ class AppDatabase {
         channel.addedAt,
         channel.lastChecked,
         channel.muted ? 1 : 0,
+        channel.showInLatest ? 1 : 0,
         channel.error,
       ],
     );
@@ -165,6 +174,16 @@ class AppDatabase {
     await db.update(
       'channels',
       {'muted': muted ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> setChannelShowInLatest(String id, bool visible) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {'show_in_latest': visible ? 1 : 0},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -225,6 +244,7 @@ class AppDatabase {
         WHERE rn = 1
       )
       AND c.muted = 0
+      AND c.show_in_latest = 1
       ORDER BY v.published_at DESC
     ''');
     return rows.map(VideoItem.fromMap).toList();

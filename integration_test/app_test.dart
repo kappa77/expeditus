@@ -224,9 +224,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Offline'), findsOneWidget);
 
+    // "Mostra in novità" controls the latest feed independently.
+    await tester.tap(find.byKey(const Key('channel-show-in-latest')));
+    await _pumpUntil(
+      tester,
+      () => harness.state.latest.every((video) => video.channelId != _channelA),
+      reason: 'il canale deve sparire dalla lista delle novità',
+    );
     await tester.tap(find.byKey(const Key('channel-back')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('channel-page')), findsNothing);
+    expect(find.byKey(const Key('video-row-aa2')), findsNothing);
+    expect(find.byKey(const Key('video-row-bb1')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('nav-saved')));
     await tester.pumpAndSettle();
@@ -234,14 +243,23 @@ void main() {
     await tester.tap(find.byKey(const Key('nav-latest')));
     await tester.pumpAndSettle();
 
-    // The same archive is reachable from the Canali list.
+    // The archive is still reachable from the Canali list; re-enable the feed.
     await tester.tap(find.byKey(const Key('nav-channels')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(Key('channel-row-$_channelA')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('channel-page')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('channel-show-in-latest')));
+    await _pumpUntil(
+      tester,
+      () => harness.state.latest.any((video) => video.channelId == _channelA),
+      reason: 'il canale deve tornare nella lista delle novità',
+    );
     await tester.tap(find.byKey(const Key('channel-back')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('nav-latest')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(Key('video-row-aa2')), findsOneWidget);
   });
 
   testWidgets('primo avvio: pagina di ricerca canale', (tester) async {

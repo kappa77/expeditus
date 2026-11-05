@@ -153,6 +153,11 @@ class _ChannelPageState extends State<ChannelPage>
     if (mounted) setState(() {});
   }
 
+  Future<void> _toggleShowInLatest() async {
+    await widget.state.toggleShowInLatest(widget.channel.id);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _download(VideoItem video) async {
     await widget.state.downloadVideo(video);
     if (mounted) await _reload();
@@ -220,9 +225,11 @@ class _ChannelPageState extends State<ChannelPage>
                   videos: _videos,
                   loadingTags: _loadingTags,
                   muted: channel.muted,
+                  showInLatest: channel.showInLatest,
                   search: _search,
                   onSearch: (value) => setState(() => _query = value),
                   onToggleMute: _toggleMute,
+                  onToggleShowInLatest: _toggleShowInLatest,
                   onBack: () => Navigator.of(context).pop(),
                 ),
                 Container(
@@ -298,9 +305,11 @@ class _ChannelHeader extends StatelessWidget {
     required this.videos,
     required this.loadingTags,
     required this.muted,
+    required this.showInLatest,
     required this.search,
     required this.onSearch,
     required this.onToggleMute,
+    required this.onToggleShowInLatest,
     required this.onBack,
   });
 
@@ -308,9 +317,11 @@ class _ChannelHeader extends StatelessWidget {
   final List<VideoItem> videos;
   final bool loadingTags;
   final bool muted;
+  final bool showInLatest;
   final TextEditingController search;
   final ValueChanged<String> onSearch;
   final VoidCallback onToggleMute;
+  final VoidCallback onToggleShowInLatest;
   final VoidCallback onBack;
 
   @override
@@ -353,7 +364,8 @@ class _ChannelHeader extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       '${videos.length} video · $last'
-                      '${muted ? ' · RSS silenziato' : ''}',
+                      '${muted ? ' · RSS silenziato' : ''}'
+                      '${showInLatest ? '' : ' · fuori dalle novità'}',
                       style: const TextStyle(
                         color: ExpeditusColors.muted,
                         fontSize: 11.5,
@@ -375,29 +387,6 @@ class _ChannelHeader extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
-              Tooltip(
-                message: muted
-                    ? 'Riattiva l’RSS: i nuovi video torneranno a essere proposti.'
-                    : 'Silenzia l’RSS: nessun nuovo video verrà proposto. '
-                          'Archivio e cronologia restano disponibili.',
-                child: TextButton.icon(
-                  key: const Key('channel-mute-rss'),
-                  onPressed: onToggleMute,
-                  icon: Icon(
-                    muted
-                        ? Icons.notifications_off_rounded
-                        : Icons.notifications_active_outlined,
-                    size: 16,
-                  ),
-                  label: Text(muted ? 'RSS silenziato' : 'Silenzia RSS'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: muted
-                        ? ExpeditusColors.accent
-                        : ExpeditusColors.muted,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -417,6 +406,82 @@ class _ChannelHeader extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              Tooltip(
+                message: muted
+                    ? 'Riattiva l’RSS: i nuovi video torneranno a essere proposti.'
+                    : 'Silenzia l’RSS: nessun nuovo video verrà proposto. '
+                          'Archivio e cronologia restano disponibili.',
+                child: FilterChip(
+                  key: const Key('channel-mute-rss'),
+                  selected: muted,
+                  onSelected: (_) => onToggleMute(),
+                  showCheckmark: false,
+                  avatar: Icon(
+                    muted
+                        ? Icons.notifications_off_rounded
+                        : Icons.notifications_active_outlined,
+                    size: 16,
+                    color: muted
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                  ),
+                  label: Text(muted ? 'RSS silenziato' : 'Silenzia RSS'),
+                  labelStyle: TextStyle(
+                    fontSize: 11,
+                    color: muted
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                  ),
+                  selectedColor: ExpeditusColors.accentSoft,
+                  backgroundColor: ExpeditusColors.surface,
+                  side: BorderSide(
+                    color: muted
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.border,
+                  ),
+                ),
+              ),
+              Tooltip(
+                message: showInLatest
+                    ? 'Nascondi l’ultimo video di questo canale dalla lista delle novità.'
+                    : 'Mostra l’ultimo video di questo canale nella lista delle novità.',
+                child: FilterChip(
+                  key: const Key('channel-show-in-latest'),
+                  selected: showInLatest,
+                  onSelected: (_) => onToggleShowInLatest(),
+                  showCheckmark: false,
+                  avatar: Icon(
+                    showInLatest
+                        ? Icons.visibility_rounded
+                        : Icons.visibility_off_rounded,
+                    size: 16,
+                    color: showInLatest
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                  ),
+                  label: const Text('Mostra in novità'),
+                  labelStyle: TextStyle(
+                    fontSize: 11,
+                    color: showInLatest
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                  ),
+                  selectedColor: ExpeditusColors.accentSoft,
+                  backgroundColor: ExpeditusColors.surface,
+                  side: BorderSide(
+                    color: showInLatest
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.border,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

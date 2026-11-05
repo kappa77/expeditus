@@ -8,6 +8,7 @@ class Channel {
     this.handle,
     this.lastChecked,
     this.muted = false,
+    this.showInLatest = true,
     this.error,
   });
 
@@ -17,6 +18,7 @@ class Channel {
   final int addedAt;
   final int? lastChecked;
   final bool muted;
+  final bool showInLatest;
   final String? error;
 
   String get displayTitle => title.trim().isEmpty ? id : title;
@@ -29,6 +31,7 @@ class Channel {
       addedAt: (map['added_at'] as int?) ?? 0,
       lastChecked: map['last_checked'] as int?,
       muted: (map['muted'] as int?) == 1,
+      showInLatest: (map['show_in_latest'] as int?) != 0,
       error: map['error'] as String?,
     );
   }
@@ -41,6 +44,7 @@ class Channel {
       'added_at': addedAt,
       'last_checked': lastChecked,
       'muted': muted ? 1 : 0,
+      'show_in_latest': showInLatest ? 1 : 0,
       'error': error,
     };
   }

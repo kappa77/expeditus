@@ -23,12 +23,11 @@ abstract class VideoDownloader {
 class VideoDownloadService implements VideoDownloader {
   VideoDownloadService({
     YoutubeExplode? youtube,
-    Future<Directory> Function()? directoryProvider,
-  })  : _youtube = youtube ?? YoutubeExplode(),
-        _directoryProvider = directoryProvider;
+    this.directoryProvider,
+  }) : _youtube = youtube ?? YoutubeExplode();
 
   final YoutubeExplode _youtube;
-  final Future<Directory> Function()? _directoryProvider;
+  final Future<Directory> Function()? directoryProvider;
   bool _closed = false;
 
   @override
@@ -82,8 +81,8 @@ class VideoDownloadService implements VideoDownloader {
   }
 
   Future<Directory> _downloadDirectory() async {
-    final directory = _directoryProvider != null
-        ? await _directoryProvider()
+    final directory = directoryProvider != null
+        ? await directoryProvider!()
         : Directory(
             p.join((await getApplicationSupportDirectory()).path, 'downloads'),
           );

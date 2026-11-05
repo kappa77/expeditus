@@ -361,6 +361,12 @@ class AppState extends ChangeNotifier {
     await reload();
   }
 
+  Future<void> toggleShowInLatest(String id) async {
+    final channel = channels.firstWhere((channel) => channel.id == id);
+    await db.setChannelShowInLatest(id, !channel.showInLatest);
+    await reload();
+  }
+
   Future<ImportResult> importCsv(String content) async {
     final parsed = TakeoutParser.parse(content);
     return _import(parsed);
