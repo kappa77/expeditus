@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.1
+
+Fix DLNA discovery on multi-homed Windows machines.
+
+### Fixed
+
+- SSDP discovery now sends `M-SEARCH` from every IPv4 interface instead of a
+  single wildcard socket. On machines with Wi-Fi plus virtual adapters
+  (Hyper-V, VMware) the search could leave from the wrong adapter and never
+  reach the TV's subnet.
+
 ## 2.2.0
 
 Automatic network setup and troubleshooting for DLNA discovery.
