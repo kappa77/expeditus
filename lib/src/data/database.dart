@@ -35,126 +35,8 @@ class AppDatabase {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
         },
-        onCreate: (db, version) async {
-          await db.execute('''
-            CREATE TABLE channels (
-              id TEXT PRIMARY KEY,
-              title TEXT NOT NULL DEFAULT '',
-              handle TEXT,
-              added_at INTEGER NOT NULL,
-              last_checked INTEGER,
-              muted INTEGER NOT NULL DEFAULT 0,
-              show_in_latest INTEGER NOT NULL DEFAULT 1,
-              default_playback_rate REAL,
-              error TEXT
-            )
-          ''');
-          await db.execute('''
-            CREATE TABLE videos (
-              id TEXT PRIMARY KEY,
-              channel_id TEXT NOT NULL,
-              title TEXT NOT NULL,
-              description TEXT NOT NULL DEFAULT '',
-              published_at INTEGER NOT NULL,
-              first_seen_at INTEGER,
-              duration_seconds INTEGER,
-              status TEXT NOT NULL DEFAULT 'new',
-              queued INTEGER NOT NULL DEFAULT 0,
-              queued_at INTEGER,
-              progress_seconds INTEGER NOT NULL DEFAULT 0,
-              fetched_at INTEGER NOT NULL,
-              keywords TEXT,
-              keywords_fetched INTEGER NOT NULL DEFAULT 0,
-              watched_at INTEGER,
-              local_path TEXT,
-              download_status TEXT NOT NULL DEFAULT 'none',
-              downloaded_at INTEGER,
-              download_error TEXT,
-              chapters TEXT,
-              chapters_fetched INTEGER NOT NULL DEFAULT 0,
-              source TEXT NOT NULL DEFAULT 'rss',
-              FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
-            )
-          ''');
-          await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_id)',
-          );
-          await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC)',
-          );
-          await db.execute('''
-            CREATE TABLE bookmarks (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              video_id TEXT NOT NULL,
-              position_seconds INTEGER NOT NULL,
-              note TEXT NOT NULL DEFAULT '',
-              created_at INTEGER NOT NULL,
-              FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
-            )
-          ''');
-          await db.execute('''
-            CREATE TABLE settings (
-              key TEXT PRIMARY KEY,
-              value TEXT NOT NULL
-            )
-          ''');
-        },
-        onUpgrade: (db, oldVersion, newVersion) async {
-          if (oldVersion < 2) {
-            await db.execute('ALTER TABLE videos ADD COLUMN keywords TEXT');
-            await db.execute(
-              'ALTER TABLE videos ADD COLUMN keywords_fetched INTEGER NOT NULL DEFAULT 0',
-            );
-          }
-          if (oldVersion < 3) {
-            await db.execute('ALTER TABLE videos ADD COLUMN watched_at INTEGER');
-            await db.execute('ALTER TABLE videos ADD COLUMN local_path TEXT');
-            await db.execute(
-              "ALTER TABLE videos ADD COLUMN download_status TEXT NOT NULL DEFAULT 'none'",
-            );
-            await db.execute('ALTER TABLE videos ADD COLUMN downloaded_at INTEGER');
-            await db.execute('ALTER TABLE videos ADD COLUMN download_error TEXT');
-          }
-          if (oldVersion < 4) {
-            await db.execute(
-              'ALTER TABLE channels ADD COLUMN show_in_latest INTEGER NOT NULL DEFAULT 1',
-            );
-          }
-          if (oldVersion < 5) {
-            await db.execute(
-              'ALTER TABLE channels ADD COLUMN default_playback_rate REAL',
-            );
-            await db.execute('ALTER TABLE videos ADD COLUMN chapters TEXT');
-            await db.execute(
-              'ALTER TABLE videos ADD COLUMN chapters_fetched INTEGER NOT NULL DEFAULT 0',
-            );
-            await db.execute('''
-              CREATE TABLE bookmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                video_id TEXT NOT NULL,
-                position_seconds INTEGER NOT NULL,
-                note TEXT NOT NULL DEFAULT '',
-                created_at INTEGER NOT NULL,
-                FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
-              )
-            ''');
-          }
-          if (oldVersion < 6) {
-            await db.execute('ALTER TABLE videos ADD COLUMN first_seen_at INTEGER');
-            await db.execute(
-              "ALTER TABLE videos ADD COLUMN source TEXT NOT NULL DEFAULT 'rss'",
-            );
-            await db.execute(
-              'UPDATE videos SET first_seen_at = COALESCE(fetched_at, published_at, 0) WHERE first_seen_at IS NULL',
-            );
-          }
-          if (oldVersion < 7) {
-            await db.execute('ALTER TABLE videos ADD COLUMN queued_at INTEGER');
-            await db.execute(
-              'UPDATE videos SET queued_at = COALESCE(fetched_at, published_at, 0) WHERE queued = 1',
-            );
-          }
-        },
+        onCreate: (db, version) => _migrate(db, 0, version),
+        onUpgrade: _migrate,
       ),
     );
     return _db!;
@@ -539,6 +421,175 @@ class AppDatabase {
       'settings',
       {'key': key, 'value': value},
       conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+}
+
+/// Creates every table and index at the current schema with IF NOT EXISTS.
+/// Used both for fresh databases and before migrations so a partially created
+/// database can still be upgraded.
+Future<void> _createSchema(Database db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS channels (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      handle TEXT,
+      added_at INTEGER NOT NULL,
+      last_checked INTEGER,
+      muted INTEGER NOT NULL DEFAULT 0,
+      show_in_latest INTEGER NOT NULL DEFAULT 1,
+      default_playback_rate REAL,
+      error TEXT
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS videos (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      published_at INTEGER NOT NULL,
+      first_seen_at INTEGER,
+      duration_seconds INTEGER,
+      status TEXT NOT NULL DEFAULT 'new',
+      queued INTEGER NOT NULL DEFAULT 0,
+      queued_at INTEGER,
+      progress_seconds INTEGER NOT NULL DEFAULT 0,
+      fetched_at INTEGER NOT NULL,
+      keywords TEXT,
+      keywords_fetched INTEGER NOT NULL DEFAULT 0,
+      watched_at INTEGER,
+      local_path TEXT,
+      download_status TEXT NOT NULL DEFAULT 'none',
+      downloaded_at INTEGER,
+      download_error TEXT,
+      chapters TEXT,
+      chapters_fetched INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'rss',
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+    )
+  ''');
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_id)',
+  );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC)',
+  );
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_id TEXT NOT NULL,
+      position_seconds INTEGER NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  ''');
+}
+
+Future<bool> _hasColumn(Database db, String table, String column) async {
+  final rows = await db.rawQuery('PRAGMA table_info("$table")');
+  return rows.any((row) => row['name'] == column);
+}
+
+/// Adds a column only when it is missing, so an interrupted migration can be
+/// retried without "duplicate column name" errors.
+Future<void> _addColumnIfMissing(
+  Database db,
+  String table,
+  String column,
+  String definition,
+) async {
+  if (await _hasColumn(db, table, column)) return;
+  await db.execute('ALTER TABLE "$table" ADD COLUMN "$column" $definition');
+}
+
+/// Idempotent schema migrations.
+///
+/// The schema is ensured first, then every migration step checks for existing
+/// columns/tables before changing them. Backfills only touch rows that still
+/// need a value, so replaying a migration never overwrites user data.
+Future<void> _migrate(Database db, int oldVersion, int newVersion) async {
+  await _createSchema(db);
+
+  if (oldVersion < 2) {
+    await _addColumnIfMissing(db, 'videos', 'keywords', 'TEXT');
+    await _addColumnIfMissing(
+      db,
+      'videos',
+      'keywords_fetched',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  if (oldVersion < 3) {
+    await _addColumnIfMissing(db, 'videos', 'watched_at', 'INTEGER');
+    await _addColumnIfMissing(db, 'videos', 'local_path', 'TEXT');
+    await _addColumnIfMissing(
+      db,
+      'videos',
+      'download_status',
+      "TEXT NOT NULL DEFAULT 'none'",
+    );
+    await _addColumnIfMissing(db, 'videos', 'downloaded_at', 'INTEGER');
+    await _addColumnIfMissing(db, 'videos', 'download_error', 'TEXT');
+  }
+  if (oldVersion < 4) {
+    await _addColumnIfMissing(
+      db,
+      'channels',
+      'show_in_latest',
+      'INTEGER NOT NULL DEFAULT 1',
+    );
+  }
+  if (oldVersion < 5) {
+    await _addColumnIfMissing(
+      db,
+      'channels',
+      'default_playback_rate',
+      'REAL',
+    );
+    await _addColumnIfMissing(db, 'videos', 'chapters', 'TEXT');
+    await _addColumnIfMissing(
+      db,
+      'videos',
+      'chapters_fetched',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS bookmarks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        video_id TEXT NOT NULL,
+        position_seconds INTEGER NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+      )
+    ''');
+  }
+  if (oldVersion < 6) {
+    await _addColumnIfMissing(db, 'videos', 'first_seen_at', 'INTEGER');
+    await _addColumnIfMissing(
+      db,
+      'videos',
+      'source',
+      "TEXT NOT NULL DEFAULT 'rss'",
+    );
+    await db.execute(
+      'UPDATE videos SET first_seen_at = COALESCE(fetched_at, published_at, 0) '
+      'WHERE first_seen_at IS NULL',
+    );
+  }
+  if (oldVersion < 7) {
+    await _addColumnIfMissing(db, 'videos', 'queued_at', 'INTEGER');
+    await db.execute(
+      'UPDATE videos SET queued_at = COALESCE(fetched_at, published_at, 0) '
+      'WHERE queued = 1 AND queued_at IS NULL',
     );
   }
 }

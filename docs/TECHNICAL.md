@@ -86,6 +86,8 @@ Tables:
 
 Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. All use `ALTER TABLE` migrations.
 
+Migrations are idempotent: tables and indexes are created with `IF NOT EXISTS`, every added column is checked with `PRAGMA table_info` before the `ALTER TABLE`, and backfills only update rows whose value is still `NULL`. An interrupted or partially applied upgrade can therefore be retried safely without "duplicate column name" or "table already exists" errors.
+
 ## Playback and ad avoidance
 
 Expeditus does not load the YouTube web player. `youtube_explode_dart` resolves a direct media URL, and `media_kit` plays it with libmpv. Because the ad-serving player is not used, player ads and end-screen recommendations are not part of the experience.
