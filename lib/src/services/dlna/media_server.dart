@@ -539,10 +539,19 @@ class MediaServer implements CastMediaServer {
         lower.contains('tailscale') ||
         lower.contains('vpn') ||
         lower.contains('docker') ||
-        lower.contains('wsl')) {
+        lower.contains('wsl') ||
+        // Android cellular, VPN and virtual interfaces.
+        lower.contains('rmnet') ||
+        lower.contains('ccmni') ||
+        lower.contains('tun') ||
+        lower.contains('ppp') ||
+        lower.contains('dummy') ||
+        lower.contains('sit')) {
       return -10;
     }
     if (lower.contains('wi-fi') || lower.contains('wifi')) return 3;
+    // Android names the primary Wi-Fi interface "wlan0".
+    if (lower.contains('wlan')) return 3;
     if (lower.contains('ethernet')) return 2;
     return 0;
   }

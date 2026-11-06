@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.3.0
+
+Android support.
+
+### Added
+
+- Android platform: the app builds and runs as an Android APK.
+- Android DLNA discovery: a `WifiManager.MulticastLock` is held during SSDP
+  discovery so the OS does not drop multicast packets, and the search is sent
+  from every IPv4 interface.
+- Network permissions and cleartext HTTP for local DLNA device descriptions
+  and the media proxy.
+- Android interface names (`wlan0`, `rmnet`, `tun`, …) are recognised when
+  choosing the LAN address for the media server.
+- The desktop window setup is skipped on Android.
+- The release workflow now builds and publishes an Android APK alongside the
+  Windows installer.
+
 ## 2.2.1
 
 Fix DLNA discovery on multi-homed Windows machines.

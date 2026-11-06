@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import 'dlna_models.dart';
+import 'multicast_lock.dart';
 
 /// Finds MediaRenderers on the local network.
 abstract class DlnaDiscovery {
@@ -19,9 +20,12 @@ abstract class DlnaDiscovery {
 /// reads each `LOCATION` document to keep only devices with an AVTransport
 /// service.
 class SsdpDlnaDiscovery implements DlnaDiscovery {
-  SsdpDlnaDiscovery({http.Client? client}) : _client = client ?? http.Client();
+  SsdpDlnaDiscovery({http.Client? client, MulticastLock? multicastLock})
+    : _client = client ?? http.Client(),
+      _multicastLock = multicastLock ?? _defaultMulticastLock();
 
   final http.Client _client;
+  final MulticastLock _multicastLock;
 
   static const _multicastAddress = '239.255.255.250';
   static const _multicastPort = 1900;
@@ -34,6 +38,10 @@ class SsdpDlnaDiscovery implements DlnaDiscovery {
   static const int _maxDescriptionBytes = 512 * 1024;
   static const int _maxDevices = 24;
 
+  static MulticastLock _defaultMulticastLock() {
+    return Platform.isAndroid ? AndroidMulticastLock() : NoopMulticastLock();
+  }
+
   @override
   Future<List<DlnaDevice>> discover({
     Duration timeout = const Duration(seconds: 4),
@@ -42,6 +50,7 @@ class SsdpDlnaDiscovery implements DlnaDiscovery {
     final sockets = <RawDatagramSocket>[];
     final subscriptions = <StreamSubscription<RawSocketEvent>>[];
 
+    await _multicastLock.acquire();
     try {
       // Send from every IPv4 interface. A single wildcard socket can pick
       // the wrong adapter on multi-homed machines (Wi-Fi, Hyper-V, VMware),
@@ -94,6 +103,7 @@ class SsdpDlnaDiscovery implements DlnaDiscovery {
       for (final socket in sockets) {
         socket.close();
       }
+      await _multicastLock.release();
     }
 
     if (responses.isEmpty) return const [];

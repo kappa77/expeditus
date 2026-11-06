@@ -3,6 +3,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -19,23 +20,25 @@ Future<void> main() async {
   MediaKit.ensureInitialized();
   await initializeDateFormatting('it_IT');
 
-  try {
-    await windowManager.ensureInitialized();
-    const options = WindowOptions(
-      size: Size(1120, 760),
-      minimumSize: Size(880, 560),
-      center: true,
-      title: 'Expeditus',
-      backgroundColor: ExpeditusColors.background,
-      skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.normal,
-    );
-    await windowManager.waitUntilReadyToShow(options, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  } catch (_) {
-    // A window manager failure should not prevent the app from starting.
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    try {
+      await windowManager.ensureInitialized();
+      const options = WindowOptions(
+        size: Size(1120, 760),
+        minimumSize: Size(880, 560),
+        center: true,
+        title: 'Expeditus',
+        backgroundColor: ExpeditusColors.background,
+        skipTaskbar: false,
+        titleBarStyle: TitleBarStyle.normal,
+      );
+      await windowManager.waitUntilReadyToShow(options, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    } catch (_) {
+      // A window manager failure should not prevent the app from starting.
+    }
   }
 
   final db = AppDatabase();
