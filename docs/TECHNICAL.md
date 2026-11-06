@@ -26,10 +26,10 @@ YouTube RSS / search / watch pages
    SQLite (sqflite_common_ffi)
             │
             ▼
-   AppState (ChangeNotifier)
-            │
-            ▼
-   Flutter UI ──► media_kit / libmpv
+   AppState (ChangeNotifier) ──► CastController
+            │                        │
+            ▼                        ├──► SSDP + UPnP AVTransport (LAN)
+   Flutter UI ──► media_kit / libmpv └──► local media proxy ──► renderer
 ```
 
 Key modules:
@@ -48,6 +48,15 @@ Key modules:
 | `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
 | `lib/src/services/stream_resolver.dart` | Direct media stream resolution |
 | `lib/src/services/sponsorblock_service.dart` | SponsorBlock segment lookup |
+| `lib/src/services/dlna/ssdp_discovery.dart` | SSDP MediaRenderer discovery and device-description fetch |
+| `lib/src/services/dlna/dlna_models.dart` | SSDP/description parsing and device model |
+| `lib/src/services/dlna/dlna_transport.dart` | UPnP AVTransport SOAP client |
+| `lib/src/services/dlna/dlna_metadata.dart` | DIDL-Lite metadata and MIME mapping |
+| `lib/src/services/dlna/media_server.dart` | Local HTTP proxy for files, MP4 and HLS |
+| `lib/src/services/dlna/windows_firewall.dart` | Inbound firewall rule detection and UAC-assisted creation |
+| `lib/src/state/cast_controller.dart` | Cast session, transport polling and drift correction |
+| `lib/src/ui/cast_dialog.dart` | Device picker, discovery progress and errors |
+| `lib/src/ui/cast_waiting_cover.dart` | Poster with play symbol while remote playback is not confirmed |
 | `lib/src/services/update_feed_client.dart` | GitHub Releases feed, ETag cache, redirect and response limits |
 | `lib/src/services/update_service.dart` | Version comparison and Windows installer selection |
 | `lib/src/models/app_update.dart` | Release and update-check models |
@@ -136,7 +145,7 @@ The check runs once at startup and then every six hours. Automatic attempts are 
 
 The feed is read over HTTPS (plain HTTP is accepted only for localhost during tests), with a 15-second timeout, a 2 MB response limit, at most five redirects, and the `Authorization` header removed when a redirect changes host. The response is cached together with its ETag: a `304 Not Modified` or a network failure reuses the local release and marks the dialog as **dati in cache**.
 
-Versions are parsed as SemVer (`v1.0.9`, `1.0.9+11`, pre-releases); build metadata is ignored. Assets are scored to find the Windows installer (`ExpeditusSetup-*.exe`), ignoring `SHA256SUMS.txt`. The app deliberately does not download or install automatically: the dialog opens the release page or the installer URL in the browser.
+Versions are parsed as SemVer (`v2.0.0`, `2.0.0+12`, pre-releases); build metadata is ignored. Assets are scored to find the Windows installer (`ExpeditusSetup-*.exe`), ignoring `SHA256SUMS.txt`. The app deliberately does not download or install automatically: the dialog opens the release page or the installer URL in the browser.
 
 Update state is stored in the `settings` table:
 
@@ -167,6 +176,69 @@ The channel page has two independent visibility controls:
 - **Mostra in novità** (`channels.show_in_latest`): controls whether the channel's latest video appears in the main **latest/New** list. The channel keeps refreshing and remains reachable from **Canali**; turning it off is useful for archive-only subscriptions.
 
 `latestPerChannel()` requires both `muted = 0` and `show_in_latest = 1`.
+
+### DLNA casting
+
+The player exposes a cast button. `CastDialog` runs SSDP discovery through
+`SsdpDlnaDiscovery` the first time it is opened; the result is cached in
+`CastController`, and a refresh button repeats the search. Discovery sends
+`M-SEARCH` to `239.255.255.250:1900` for `MediaRenderer:1` and
+`AVTransport:1`, reads each `LOCATION` description, and keeps devices that
+expose an `AVTransport` control URL.
+
+Selecting a device creates a `DlnaSoapTransport` and validates it with
+`GetTransportInfo`; the dialog shows an "Aggancio a …" spinner during this
+step. Action failures are shown in the dialog with a retry button.
+
+`CastController.castVideo` publishes the media through `MediaServer`, a local
+HTTP server bound to the LAN address on an ephemeral port:
+
+- downloaded videos are served from disk;
+- remote videos are resolved again with `StreamResolver.resolveForCasting`,
+  which prefers a muxed MP4 (the most compatible DLNA format) and falls back
+  to HLS;
+- all remote content is proxied, because YouTube stream URLs may be tied to
+  the requesting IP;
+- `Range`/`206` requests are forwarded so the renderer can seek;
+- HLS playlists are fetched and rewritten so variants, keys, init segments
+  and media segments point back at the local proxy.
+
+The proxy URL and a DIDL-Lite document (title, `object.item.videoItem`
+class, `video/mp4` or HLS protocol info, YouTube thumbnail as album art) are
+sent with `SetAVTransportURI`, followed by an optional `Seek` and `Play`.
+The app polls `GetTransportInfo` to learn whether the renderer started.
+Renderers can take several seconds to leave `TRANSITIONING`; the probe waits
+up to about 15 seconds. If playback is still not confirmed, the player shows
+the thumbnail with a play symbol over the muted video; pressing it sends
+`Play` again. A transport error keeps local audio muted while the TV is
+connected, shows the error in a snackbar with a retry action, and leaves the
+poster available with **Riproduci solo qui**.
+
+The local proxy tracks the first request for each published token. If the
+renderer has not requested the media a few seconds after `Play`,
+`CastController` checks the Windows Firewall with
+`WindowsFirewallService`. When the rule for the current executable is
+missing, the dialog and the poster expose **Consenti accesso rete**: the
+button runs `netsh advfirewall firewall add rule` through an elevated
+`Start-Process` (UAC). The rule is inbound, allows TCP and UDP for that
+executable only, uses `profile=any` (so it also works when Windows classifies
+the LAN as Public), and is named from a hash of the executable path so debug,
+release and installed builds do not collide. The firewall rule is never
+changed without this explicit user action.
+
+Once connected, `PlayerPage` casts every video it opens and calls
+`setVolume(0)` on the local player. Local playback is paused while the
+renderer loads; it resumes from the same position only when the renderer
+reports `PLAYING`. This avoids losing the first seconds on slow TVs. The
+local audio stays muted for the whole connection: buffering, playback errors
+and transport polling failures never restore it. The only ways to hear audio
+locally are disconnecting or choosing **Riproduci solo qui**, which closes the
+session and resumes local playback unmuted. Local play/pause events are
+mirrored to the renderer, and the local position is compared with
+`GetPositionInfo` every five seconds; a drift above four seconds triggers a
+remote `Seek`.
+Closing the player stops the renderer but keeps the connection, so the next
+video is cast again. Disconnecting closes the transport and the media server.
 
 ### Offline downloads
 
@@ -235,11 +307,11 @@ The installer is currently unsigned. Windows SmartScreen may warn until a code-s
 
 The source of truth for a release is the Git tag, not the version committed in `pubspec.yaml`.
 
-1. Create a semantic tag, for example `v1.2.3`.
+1. Create a semantic tag, for example `v2.0.0`.
 2. Push the tag.
 3. `.github/workflows/release.yml` runs on `windows-latest`.
-4. The workflow extracts `1.2.3` from the tag and writes it to `pubspec.yaml` for the CI build only.
-5. Flutter is built with `--dart-define=APP_VERSION=1.2.3`, so the version shown in the application footer matches the release.
+4. The workflow extracts `2.0.0` from the tag and writes it to `pubspec.yaml` for the CI build only.
+5. Flutter is built with `--dart-define=APP_VERSION=2.0.0`, so the version shown in the application footer matches the release.
 6. NSIS receives the same version and build number, so the installer filename and Windows file version match.
 7. The workflow uploads the installer and `SHA256SUMS.txt` as artifacts and publishes a GitHub Release.
 
@@ -251,7 +323,9 @@ The app footer reads `kAppVersion` from `lib/src/version.dart`, with a developme
 
 ```powershell
 # Unit tests: RSS, CSV Takeout, resolver, seek accumulator, migrations,
-# update feed/version/model
+# update feed/version/model, DLNA parsing/SOAP/media proxy/cast/firewall
+# All DLNA tests are hermetic: fakes, MockClient and loopback HTTP servers.
+# They do not need a TV, multicast or a firewall rule, so they run in CI.
 flutter test
 
 # Deterministic desktop E2E: onboarding, import, feed, channel archive/history,
@@ -261,6 +335,9 @@ flutter test integration_test -d windows
 
 # Live network E2E: @antirez feed, channel search, video link + auto-subscribe
 flutter test integration_test_live/live_youtube_test.dart -d windows --dart-define=RUN_LIVE_TESTS=true
+
+# Live DLNA testing against a real TV is manual only: it is not part of the
+# repository test suite and is never run by CI.
 ```
 
 ## Limits and risks
@@ -277,6 +354,13 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - Third-party YouTube clients may be subject to YouTube's Terms of Service.
 - Update checks use GitHub's public Releases API without authentication; the unauthenticated limit is 60 requests per hour per IP. The app checks at most every six hours and reuses ETag responses.
 - The updater only checks and opens the release page or installer URL; it does not download or install silently. Updating remains a manual download-and-run step.
+- DLNA casting requires the TV and PC on the same local network. Windows
+  Firewall must allow inbound connections to the Expeditus executable; the
+  app can add that rule after a UAC confirmation. If the network profile is
+  Public and the rule is not granted, the renderer cannot fetch the proxied
+  stream. There is no transcoding, so unsupported codecs still fail on the
+  device. Renderer quirks (HLS support, poster/album art, metadata parsing)
+  vary by model.
 - The installer is unsigned and the UI is currently in Italian.
 
 ## License

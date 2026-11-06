@@ -143,6 +143,10 @@ class VideoItem {
 
   String get url => 'https://www.youtube.com/watch?v=$id';
 
+  /// Poster used by the cast overlay and by the DLNA metadata.
+  String get thumbnailUrl =>
+      Uri.https('i.ytimg.com', '/vi/$id/hqdefault.jpg').toString();
+
   VideoItem copyWith({
     String? title,
     String? description,

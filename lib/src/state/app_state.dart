@@ -18,6 +18,7 @@ import '../util/app_version.dart';
 import '../util/chapter_parser.dart';
 import '../util/rss_grouping.dart';
 import '../version.dart';
+import 'cast_controller.dart';
 
 double _snapPlaybackRate(double value) {
   final clamped = value.clamp(0.25, 3.5).toDouble();
@@ -37,6 +38,7 @@ class AppState extends ChangeNotifier {
     VideoChaptersProvider? chapterService,
     UpdateChecker? updateChecker,
     AppVersion? appVersion,
+    CastController? castController,
   })  : rss = rss ?? RssService(),
         resolver = resolver ?? YouTubeResolver(),
         sponsorBlock = sponsorBlock ?? SponsorBlockService(),
@@ -46,7 +48,8 @@ class AppState extends ChangeNotifier {
         chapterService = chapterService ?? VideoChaptersService(),
         currentVersion = appVersion ?? _buildVersion(),
         updateChecker = updateChecker ??
-            UpdateService(currentVersion: appVersion ?? _buildVersion());
+            UpdateService(currentVersion: appVersion ?? _buildVersion()),
+        castController = castController ?? CastController();
 
   final AppDatabase db;
   final RssService rss;
@@ -58,6 +61,7 @@ class AppState extends ChangeNotifier {
   final VideoChaptersProvider chapterService;
   final AppVersion currentVersion;
   final UpdateChecker updateChecker;
+  final CastController castController;
 
   List<Channel> channels = [];
   List<VideoItem> latest = [];
@@ -867,6 +871,7 @@ class AppState extends ChangeNotifier {
     downloader.close();
     videoLink.close();
     chapterService.close();
+    castController.dispose();
     super.dispose();
   }
 }

@@ -4,7 +4,7 @@
 
 **A quiet, text-first inbox for your YouTube subscriptions.**
 
-Expeditus shows only the latest upload from each channel you follow. No algorithmic home, no recommendations, no autoplay, no thumbnails. Just the channel, the title, a short description, and when it was published.
+Expeditus shows only the latest upload from each channel you follow. No algorithmic home, no recommendations, no autoplay, no thumbnails in the feed. Just the channel, the title, a short description, and when it was published.
 
 ## Why Expeditus
 
@@ -15,7 +15,7 @@ One row per channel. The latest video. That is the whole feed.
 ## Features
 
 - **One latest video per channel**, in reverse chronological order.
-- **No recommendations, no autoplay, no thumbnails, no Shorts feed noise.**
+- **No recommendations, no autoplay, no thumbnails in the feed, no Shorts feed noise.**
 - **Import your subscriptions** from Google Takeout, paste channel handles or URLs, or search YouTube by keyword.
 - **Channel page with two tabs:** the recent archive and the channel history, with filters, search, tags, and offline downloads.
 - **Save videos for offline playback:** download a video from its channel page; it appears under **Saved** and plays from local storage.
@@ -25,6 +25,7 @@ One row per channel. The latest video. That is the whole feed.
 - **First-run onboarding:** the app opens on channel search with a short explanation.
 - **Local-first:** subscriptions, watch state, Watch later, and settings stay on your computer. No Google login. The update check contacts GitHub without sending account data.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
+- **DLNA casting:** send the current video to a TV or MediaRenderer on the same network. Expeditus discovers devices with SSDP, remembers the list, and has a refresh button to search again. While connected, every opened video plays both on the device and in the app, with the app audio muted for the whole connection (including buffering and errors); audio returns only after disconnecting or choosing **Riproduci solo qui**. If the renderer does not start, the player shows the thumbnail with a play symbol so you can start it; connection and streaming errors are shown in the cast dialog and in a snackbar.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
 - **Playback speed** from 0.25× to 3.50× in 0.25 steps, with an optional default speed per channel.
 - **Chapters and timestamped bookmarks:** jump to description chapters or save a bookmark at the current second with a personal note.
@@ -34,6 +35,18 @@ One row per channel. The latest video. That is the whole feed.
 - **±10 second seeking** with debounce: several quick presses become one combined jump.
 - **Keyboard-first:** move, open, mark watched, save to Watch later, search, and refresh without touching the mouse.
 - **Focus mode:** hide descriptions and keep only channel and title.
+
+## Casting to a TV
+
+Open a video and press the cast icon in the player bar. The first time, Expeditus searches the local network for DLNA MediaRenderers; use the refresh button in the dialog to search again. Select a device and wait for the connection animation. From then on, every video you open plays on the TV and in Expeditus with the app audio muted. The TV must be on the same network as the PC.
+
+The TV reaches the video through a small media server inside Expeditus. If Windows Firewall blocks it, the app detects that the TV never contacted the PC and shows a **Consenti accesso rete** button; Windows asks for confirmation (UAC) and then adds an inbound rule for Expeditus. This also works when the home network is classified as Public. If you prefer to add the rule manually, run this in an administrator prompt with the Expeditus executable path:
+
+```powershell
+netsh advfirewall firewall add rule name="Expeditus-DLNA" dir=in action=allow program="C:\Path\To\expeditus.exe" enable=yes profile=any protocol=any
+```
+
+Some renderers support only a subset of codecs. Expeditus prefers a muxed MP4 for casting and falls back to a proxied HLS stream.
 
 ## Install (Windows)
 
@@ -81,5 +94,6 @@ The Windows build bundles libmpv, which is **GPL-2.0-or-later**. See [THIRD_PART
 ## Documentation
 
 - [Technical documentation](docs/TECHNICAL.md) — architecture, data flow, build, tests, installer, and release process.
+- [Changelog](CHANGELOG.md) — release notes.
 - [Third-party notices](THIRD_PARTY_NOTICES.md) — licenses for bundled native components and Dart/Flutter packages.
 - [License](LICENSE) — MIT.

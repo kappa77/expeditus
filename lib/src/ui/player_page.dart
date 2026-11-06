@@ -10,10 +10,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models.dart';
 import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
+import '../state/cast_controller.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../util/playback_rates.dart';
 import '../util/seek_accumulator.dart';
+import 'cast_dialog.dart';
+import 'cast_waiting_cover.dart';
 import 'video_outline_dialog.dart';
 
 class PlayerPage extends StatefulWidget {
@@ -51,6 +54,15 @@ class _PlayerPageState extends State<PlayerPage> {
   late final SeekAccumulator _seekAccumulator;
   List<VideoChapter> _chapters = const [];
   bool _chaptersLoaded = false;
+  Uri? _mediaUri;
+  String? _streamKind;
+  String? _localPath;
+  bool _castMuted = false;
+  double _volumeBeforeCast = 100;
+  String? _lastCastError;
+  DateTime? _castStartedAt;
+  bool _castInFlight = false;
+  bool _resumeLocalWhenRemoteStarts = false;
 
   @override
   void initState() {
@@ -65,6 +77,10 @@ class _PlayerPageState extends State<PlayerPage> {
         if (!mounted) return;
         setState(() {});
         unawaited(_player.seek(target));
+        final cast = widget.state.castController;
+        if (cast.isCasting && _castMuted) {
+          unawaited(cast.seekTo(target));
+        }
       },
     );
 
@@ -84,6 +100,23 @@ class _PlayerPageState extends State<PlayerPage> {
         if (mounted) setState(() => _error = message);
       }),
     );
+    _subscriptions.add(
+      _player.stream.playing.listen((playing) {
+        final startedAt = _castStartedAt;
+        // Ignore the event produced by the player opening right before the
+        // first cast: the renderer is already starting on its own.
+        if (startedAt != null &&
+            DateTime.now().difference(startedAt) <
+                const Duration(milliseconds: 1500)) {
+          return;
+        }
+        final cast = widget.state.castController;
+        if (cast.isCasting && _castMuted) {
+          unawaited(cast.mirrorLocalPlaying(playing));
+        }
+      }),
+    );
+    widget.state.castController.addListener(_onCastChanged);
 
     unawaited(_open());
     unawaited(_loadChapters());
@@ -130,6 +163,10 @@ class _PlayerPageState extends State<PlayerPage> {
     );
     if (target != null && _ready) {
       await _player.seek(target);
+      final cast = widget.state.castController;
+      if (cast.isCasting && _castMuted) {
+        unawaited(cast.seekTo(target));
+      }
     }
   }
 
@@ -148,6 +185,8 @@ class _PlayerPageState extends State<PlayerPage> {
     try {
       Uri? mediaUri;
       String? quality;
+      String? kind;
+      String? localPathUsed;
 
       final localPath = widget.video.localPath;
       if (localPath != null) {
@@ -155,6 +194,8 @@ class _PlayerPageState extends State<PlayerPage> {
         if (await localFile.exists()) {
           mediaUri = Uri.file(localFile.path);
           quality = 'Offline';
+          kind = 'file';
+          localPathUsed = localFile.path;
         }
       }
 
@@ -163,17 +204,32 @@ class _PlayerPageState extends State<PlayerPage> {
         final stream = await resolve(widget.video.id);
         mediaUri = stream.url;
         quality = stream.quality;
+        kind = stream.kind;
       }
 
       if (!mounted) return;
       _quality = quality;
+      _mediaUri = mediaUri;
+      _streamKind = kind;
+      _localPath = localPathUsed;
       final controller = VideoController(_player);
       _controller = controller;
       await _player.open(Media(mediaUri.toString()), play: true);
       if (!mounted) return;
       await _player.setRate(_rate);
       setState(() => _ready = true);
+      if (widget.state.castController.isConnected) {
+        // Mute immediately, before the cast-friendly stream is resolved, so
+        // the local audio never overlaps the renderer.
+        if (!_castMuted) _volumeBeforeCast = _player.state.volume;
+        await _player.setVolume(0);
+        _castMuted = true;
+        if (mounted) setState(() {});
+      }
       await widget.state.markSeen(widget.video);
+      if (widget.state.castController.isConnected) {
+        await _startCasting();
+      }
       await _loadSponsorSegments();
     } catch (e) {
       if (mounted) {
@@ -199,6 +255,10 @@ class _PlayerPageState extends State<PlayerPage> {
   void _onPosition(Duration position) {
     if (!mounted) return;
     _position = position;
+    final cast = widget.state.castController;
+    if (cast.isCasting && _castMuted) {
+      unawaited(cast.syncTo(position));
+    }
 
     final duration = _duration;
     if (duration != null &&
@@ -213,6 +273,9 @@ class _PlayerPageState extends State<PlayerPage> {
         if (_lastSkippedEndMs != segment.end.inMilliseconds) {
           _lastSkippedEndMs = segment.end.inMilliseconds;
           _player.seek(segment.end);
+          if (cast.isCasting && _castMuted) {
+            unawaited(cast.seekTo(segment.end));
+          }
           _toast('Sponsor saltato');
         }
         break;
@@ -226,18 +289,224 @@ class _PlayerPageState extends State<PlayerPage> {
     unawaited(widget.state.markWatched(widget.video));
   }
 
-  void _toast(String message) {
+  void _toast(String message, {SnackBarAction? action}) {
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: action == null ? 2 : 5),
+        action: action,
+      ),
     );
   }
 
+  void _onCastChanged() {
+    if (!mounted) return;
+    final cast = widget.state.castController;
+    if (cast.remotePlaying && _castMuted && _resumeLocalWhenRemoteStarts) {
+      _resumeLocalWhenRemoteStarts = false;
+      if (!_player.state.playing) {
+        unawaited(_player.play());
+      }
+    }
+    final castError = cast.error;
+    if (castError != null && castError != _lastCastError) {
+      _lastCastError = castError;
+      if (_castMuted) {
+        // Keep local audio muted while the TV is connected. The user can
+        // explicitly switch to local playback from the poster.
+        _toast(
+          castError,
+          action: SnackBarAction(
+            label: 'Riprova',
+            onPressed: () => unawaited(_startCasting()),
+          ),
+        );
+      }
+    }
+    if (!cast.isConnected && _castMuted) {
+      unawaited(_restoreLocalAudio());
+    }
+    setState(() {});
+  }
+
+  Future<void> _openCastDialog() async {
+    final cast = widget.state.castController;
+    final justConnected = await showCastDialog(context, cast);
+    if (!mounted) return;
+    if (justConnected == true &&
+        cast.isConnected &&
+        _ready &&
+        _mediaUri != null) {
+      await _startCasting();
+    } else if (!cast.isConnected && _castMuted) {
+      await _restoreLocalAudio();
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Sends the current video to the connected renderer.
+  ///
+  /// Local playback is paused (and muted) until the renderer confirms that it
+  /// started; then both play from the same position. This avoids losing the
+  /// first seconds on TVs with a slow handshake.
+  Future<void> _startCasting() async {
+    if (_castInFlight) return;
+    _castInFlight = true;
+    try {
+      await _performCasting();
+    } finally {
+      _castInFlight = false;
+    }
+  }
+
+  Future<void> _performCasting() async {
+    final cast = widget.state.castController;
+    final mediaUri = _mediaUri;
+    if (!mounted || !cast.isConnected || mediaUri == null) return;
+
+    final startAt = _player.state.position;
+    if (!_castMuted) _volumeBeforeCast = _player.state.volume;
+    await _player.setVolume(0);
+    if (!mounted) return;
+    _castMuted = true;
+    _resumeLocalWhenRemoteStarts = true;
+    _castStartedAt = DateTime.now();
+    _lastCastError = null;
+    if (_player.state.playing) {
+      await _player.pause();
+      if (!mounted) return;
+    }
+    setState(() {});
+
+    final ok = await cast.castVideo(
+      video: widget.video,
+      fallbackUri: mediaUri,
+      fallbackKind: _streamKind,
+      localPath: _localPath,
+      startAt: startAt,
+    );
+    if (!mounted) {
+      unawaited(cast.stopPlayback(expectedVideoId: widget.video.id));
+      return;
+    }
+    if (!ok) {
+      if (!cast.isConnected) {
+        await _restoreLocalAudio();
+        return;
+      }
+      final message = cast.error ?? 'Invio al dispositivo non riuscito.';
+      if (_lastCastError != message) {
+        _lastCastError = message;
+        _toast(
+          message,
+          action: SnackBarAction(
+            label: 'Riprova',
+            onPressed: () => unawaited(_startCasting()),
+          ),
+        );
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Resumes playback on the renderer after the user pressed the poster's
+  /// play button, or retries the whole handshake after an error.
+  Future<void> _resumeCasting() async {
+    final cast = widget.state.castController;
+    if (!mounted || !cast.isConnected) return;
+    if (cast.playback == CastPlaybackState.error ||
+        cast.currentVideo?.id != widget.video.id ||
+        _mediaUri == null) {
+      await _startCasting();
+      return;
+    }
+
+    if (!_castMuted) _volumeBeforeCast = _player.state.volume;
+    await _player.setVolume(0);
+    if (!mounted) return;
+    final startAt = _player.state.position;
+    _castMuted = true;
+    _resumeLocalWhenRemoteStarts = true;
+    _castStartedAt = DateTime.now();
+    _lastCastError = null;
+    if (_player.state.playing) {
+      await _player.pause();
+      if (!mounted) return;
+    }
+    // Align the device with the paused local position, then wait for the
+    // renderer to confirm before resuming local playback.
+    await cast.seekTo(startAt);
+    final ok = await cast.play();
+    if (!mounted) return;
+    if (!ok) {
+      final message = cast.error ?? 'Avvio sul dispositivo non riuscito.';
+      if (!cast.isConnected) {
+        await _restoreLocalAudio();
+      }
+      if (_lastCastError != message) {
+        _lastCastError = message;
+        _toast(
+          message,
+          action: SnackBarAction(
+            label: 'Riprova',
+            onPressed: () => unawaited(_startCasting()),
+          ),
+        );
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _restoreLocalAudio() async {
+    if (!_castMuted) return;
+    final resumeLocal = _resumeLocalWhenRemoteStarts;
+    _resumeLocalWhenRemoteStarts = false;
+    _castMuted = false;
+    try {
+      await _player.setVolume(_volumeBeforeCast.clamp(0, 100));
+      if (resumeLocal && !_player.state.playing) {
+        unawaited(_player.play());
+      }
+    } on Object {
+      // The player may be closing.
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _allowFirewallAndRetry() async {
+    final cast = widget.state.castController;
+    final allowed = await cast.allowFirewall();
+    if (!mounted) return;
+    if (!allowed) {
+      final message = cast.error ?? 'Permesso non concesso.';
+      if (_lastCastError != message) {
+        _lastCastError = message;
+        _toast(message);
+      }
+      return;
+    }
+    await _startCasting();
+  }
+
+  Future<void> _useLocalOnly() async {
+    await widget.state.castController.disconnect();
+    await _restoreLocalAudio();
+    if (mounted) _toast('Trasmissione interrotta');
+  }
+
   Future<void> _retry() async {
+    final cast = widget.state.castController;
+    if (cast.isCasting && cast.currentVideo?.id == widget.video.id) {
+      await cast.stopPlayback(expectedVideoId: widget.video.id);
+    }
     setState(() {
       _error = null;
       _ready = false;
       _lastSkippedEndMs = null;
+      _mediaUri = null;
+      _streamKind = null;
+      _localPath = null;
     });
     await _player.stop();
     await _open();
@@ -252,6 +521,11 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    final cast = widget.state.castController;
+    cast.removeListener(_onCastChanged);
+    if (cast.currentVideo?.id == widget.video.id) {
+      unawaited(cast.stopPlayback(expectedVideoId: widget.video.id));
+    }
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _seekAccumulator.dispose();
     for (final subscription in _subscriptions) {
@@ -306,8 +580,61 @@ class _PlayerPageState extends State<PlayerPage> {
     }
   }
 
+  Widget _buildStage(CastController cast) {
+    if (_error != null) {
+      return _PlayerError(
+        message: _error!,
+        onRetry: _retry,
+        onOpenExternal: _openExternal,
+      );
+    }
+    if (!_ready) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 2),
+            SizedBox(height: 14),
+            Text(
+              'Risoluzione dello stream…',
+              style: TextStyle(color: ExpeditusColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_controller == null) return const SizedBox.shrink();
+
+    final showCastCover =
+        _castMuted && cast.isConnected && cast.isCasting && !cast.remotePlaying;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Video(
+          controller: _controller!,
+          controls: MaterialVideoControls,
+          fit: BoxFit.contain,
+        ),
+        if (showCastCover)
+          Positioned.fill(
+            child: CastWaitingCover(
+              video: widget.video,
+              deviceName: cast.connectedDeviceName ?? 'Dispositivo',
+              starting: cast.playback == CastPlaybackState.starting,
+              firewallRequired: cast.firewallRequired,
+              firewallBusy: cast.firewallBusy,
+              onPlay: _resumeCasting,
+              onAllowFirewall: _allowFirewallAndRetry,
+              onUseLocal: _useLocalOnly,
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cast = widget.state.castController;
     return Scaffold(
       key: const Key('player-page'),
       backgroundColor: Colors.black,
@@ -323,6 +650,19 @@ class _PlayerPageState extends State<PlayerPage> {
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
         actions: [
+          IconButton(
+            key: const Key('cast-button'),
+            tooltip: cast.isConnected
+                ? 'Trasmesso su ${cast.connectedDeviceName ?? 'dispositivo'}'
+                : 'Trasmetti su dispositivo',
+            onPressed: _openCastDialog,
+            icon: Icon(
+              cast.isConnected
+                  ? Icons.cast_connected_rounded
+                  : Icons.cast_rounded,
+              color: cast.isConnected ? ExpeditusColors.accent : null,
+            ),
+          ),
           IconButton(
             key: const Key('chapters-button'),
             tooltip: 'Capitoli e segnalibri',
@@ -404,41 +744,14 @@ class _PlayerPageState extends State<PlayerPage> {
       ),
       body: Column(
         children: [
-          Expanded(
-            child: _error != null
-                ? _PlayerError(
-                    message: _error!,
-                    onRetry: _retry,
-                    onOpenExternal: _openExternal,
-                  )
-                : !_ready
-                ? const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(strokeWidth: 2),
-                        SizedBox(height: 14),
-                        Text(
-                          'Risoluzione dello stream…',
-                          style: TextStyle(
-                            color: ExpeditusColors.muted,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : _controller == null
-                ? const SizedBox.shrink()
-                : Video(
-                    controller: _controller!,
-                    controls: MaterialVideoControls,
-                    fit: BoxFit.contain,
-                  ),
-          ),
+          Expanded(child: _buildStage(cast)),
           _PlayerFooter(
             video: widget.video,
             quality: _quality,
+            castStatus: cast.isConnected
+                ? 'Cast · ${cast.connectedDeviceName ?? 'dispositivo'}'
+                      '${_castMuted ? ' · muto qui' : ''}'
+                : null,
             position: _seekAccumulator.pending ?? _position,
             duration: _duration,
             sponsorSegments: _segments.length,
@@ -530,6 +843,7 @@ class _PlayerFooter extends StatelessWidget {
   const _PlayerFooter({
     required this.video,
     required this.quality,
+    required this.castStatus,
     required this.position,
     required this.duration,
     required this.sponsorSegments,
@@ -543,6 +857,7 @@ class _PlayerFooter extends StatelessWidget {
 
   final VideoItem video;
   final String? quality;
+  final String? castStatus;
   final Duration position;
   final Duration? duration;
   final int sponsorSegments;
@@ -583,7 +898,32 @@ class _PlayerFooter extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (quality != null)
+              if (castStatus != null)
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.cast_connected_rounded,
+                        size: 12,
+                        color: ExpeditusColors.accent,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          castStatus!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: ExpeditusColors.accent,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (quality != null)
                 Text(
                   'Stream diretto · $quality',
                   style: const TextStyle(
