@@ -15,6 +15,7 @@ class VideoRow extends StatefulWidget {
     required this.onToggleWatched,
     required this.onToggleQueued,
     this.onChannelTap,
+    this.showWatchLaterDate = false,
   });
 
   final VideoItem video;
@@ -25,6 +26,9 @@ class VideoRow extends StatefulWidget {
   final VoidCallback onToggleWatched;
   final VoidCallback onToggleQueued;
   final VoidCallback? onChannelTap;
+
+  /// Shows when the video was saved instead of when it was published.
+  final bool showWatchLaterDate;
 
   @override
   State<VideoRow> createState() => _VideoRowState();
@@ -38,10 +42,13 @@ class _VideoRowState extends State<VideoRow> {
   @override
   Widget build(BuildContext context) {
     final video = widget.video;
-    final accent = _channelColor(video.channelId);
+    final accent = videoChannelColor(video.channelId);
     final dimmed = video.isWatched;
     final showDescription =
         !widget.hideDescription && video.description.trim().isNotEmpty;
+    final dateLabel = widget.showWatchLaterDate && video.watchLaterAt != null
+        ? 'salvato ${relativeTime(DateTime.fromMillisecondsSinceEpoch(video.watchLaterAt!))}'
+        : relativeTime(video.published);
 
     return SizedBox(
       height: _rowHeight,
@@ -127,7 +134,7 @@ class _VideoRowState extends State<VideoRow> {
                           ],
                           const Spacer(),
                           Text(
-                            relativeTime(video.published),
+                            dateLabel,
                             style: const TextStyle(
                               color: ExpeditusColors.muted,
                               fontSize: 11,
@@ -181,13 +188,16 @@ class _VideoRowState extends State<VideoRow> {
                           color: ExpeditusColors.green,
                         ),
                       ),
-                    if (video.queued)
+                    if (video.watchLater)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 4),
-                        child: Icon(
-                          Icons.bookmark_rounded,
-                          size: 14,
-                          color: ExpeditusColors.accent,
+                        child: Tooltip(
+                          message: 'In Guarda più tardi',
+                          child: Icon(
+                            Icons.watch_later_rounded,
+                            size: 14,
+                            color: ExpeditusColors.accent,
+                          ),
                         ),
                       ),
                     if (video.durationSeconds != null)
@@ -227,10 +237,12 @@ class _VideoRowState extends State<VideoRow> {
                             onTap: widget.onToggleWatched,
                           ),
                           _MiniAction(
-                            tooltip: video.queued ? 'Togli dalla coda' : 'In coda',
-                            icon: video.queued
-                                ? Icons.bookmark_rounded
-                                : Icons.bookmark_border_rounded,
+                            tooltip: video.watchLater
+                                ? 'Rimuovi da Guarda più tardi'
+                                : 'Guarda più tardi',
+                            icon: video.watchLater
+                                ? Icons.watch_later_rounded
+                                : Icons.watch_later_outlined,
                             onTap: widget.onToggleQueued,
                           ),
                         ],
@@ -245,14 +257,15 @@ class _VideoRowState extends State<VideoRow> {
     );
   }
 
-  static Color _channelColor(String id) {
-    var hash = 0;
-    for (final unit in id.codeUnits) {
-      hash = (hash * 31 + unit) & 0x7fffffff;
-    }
-    final hue = (hash % 360).toDouble();
-    return HSLColor.fromAHSL(1, hue, 0.32, 0.66).toColor();
+}
+
+Color videoChannelColor(String id) {
+  var hash = 0;
+  for (final unit in id.codeUnits) {
+    hash = (hash * 31 + unit) & 0x7fffffff;
   }
+  final hue = (hash % 360).toDouble();
+  return HSLColor.fromAHSL(1, hue, 0.32, 0.66).toColor();
 }
 
 class _MiniAction extends StatelessWidget {

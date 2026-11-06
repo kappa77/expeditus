@@ -13,6 +13,7 @@ import '../services/video_download_service.dart';
 import '../services/video_link_service.dart';
 import '../services/video_tags_service.dart';
 import '../util/chapter_parser.dart';
+import '../util/rss_grouping.dart';
 
 double _snapPlaybackRate(double value) {
   final clamped = value.clamp(0.25, 3.5).toDouble();
@@ -57,6 +58,10 @@ class AppState extends ChangeNotifier {
 
   String view = 'latest';
   String search = '';
+
+  /// When set, the RSS history view shows only this channel.
+  String? rssChannel;
+
   int selected = 0;
 
   bool loading = true;
@@ -83,6 +88,10 @@ class AppState extends ChangeNotifier {
 
   int get newCount => latest.where((video) => video.isNew).length;
   int get queueCount => queueItems.length;
+  int get watchLaterCount => queueItems.length;
+
+  /// The explicit watch later list.
+  List<VideoItem> get watchLaterItems => queueItems;
   int get latestCount => latest.length;
   int get savedCount => saved.length;
   int get rssHistoryCount => rssHistory.length;
@@ -128,6 +137,10 @@ class AppState extends ChangeNotifier {
     queueItems = await db.queue();
     saved = await db.downloadedVideos();
     rssHistory = await db.rssHistory();
+    if (rssChannel != null &&
+        !rssHistory.any((video) => video.channelId == rssChannel)) {
+      rssChannel = null;
+    }
     _applyFilter();
     _notify();
   }
@@ -141,6 +154,13 @@ class AppState extends ChangeNotifier {
 
   void setSearch(String value) {
     search = value;
+    selected = 0;
+    _applyFilter();
+    _notify();
+  }
+
+  void setRssChannel(String? channelId) {
+    rssChannel = channelId;
     selected = 0;
     _applyFilter();
     _notify();
@@ -164,11 +184,15 @@ class AppState extends ChangeNotifier {
       case 'new':
         source = latest.where((video) => video.isNew);
       case 'queue':
-        source = queueItems;
+      case 'watch-later':
+        source = watchLaterItems;
       case 'saved':
         source = saved;
       case 'rss':
-        source = rssHistory;
+        source = groupRssHistoryByChannel(rssHistory);
+        if (rssChannel != null) {
+          source = source.where((video) => video.channelId == rssChannel);
+        }
       default:
         source = latest;
     }
@@ -350,6 +374,8 @@ class AppState extends ChangeNotifier {
     await db.setQueued(video.id, !video.queued);
     await reload();
   }
+
+  Future<void> toggleWatchLater(VideoItem video) => toggleQueued(video);
 
   Future<void> markAllSeen() async {
     final now = DateTime.now().millisecondsSinceEpoch;

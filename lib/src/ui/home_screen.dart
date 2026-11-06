@@ -7,6 +7,7 @@ import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/rss_grouping.dart';
 import '../version.dart';
 import 'channel_page.dart';
 import 'channels_view.dart';
@@ -14,6 +15,8 @@ import 'import_dialog.dart';
 import 'player_page.dart';
 import 'settings_dialog.dart';
 import 'video_row.dart';
+
+const double _rssHeaderHeight = 44;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.state, this.playerResolver});
@@ -114,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _ensureListFocus() {
+    if (!mounted) return;
     if (!_listFocus.hasFocus) _listFocus.requestFocus();
   }
 
@@ -240,7 +244,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (video != null) state.toggleWatched(video);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyS) {
+    if (key == LogicalKeyboardKey.keyS ||
+        key == LogicalKeyboardKey.keyW) {
       final video = state.selectedVideo;
       if (video != null) state.toggleQueued(video);
       return KeyEventResult.handled;
@@ -269,7 +274,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _scrollToSelected(int index) {
     if (!_scrollController.hasClients) return;
-    final target = (index * _rowHeight).clamp(
+    var headers = 0;
+    if (widget.state.view == 'rss') {
+      String? currentChannel;
+      final visible = widget.state.visible;
+      for (var i = 0; i <= index && i < visible.length; i++) {
+        final channelId = visible[i].channelId;
+        if (channelId != currentChannel) {
+          headers++;
+          currentChannel = channelId;
+        }
+      }
+    }
+    final target = (index * _rowHeight + headers * _rssHeaderHeight).clamp(
       0.0,
       _scrollController.position.maxScrollExtent,
     );
@@ -351,13 +368,18 @@ class _Sidebar extends StatelessWidget {
             selected: state.view == 'new',
             onTap: () => onSelect('new'),
           ),
-          _NavItem(
-            key: const Key('nav-queue'),
-            label: 'Coda',
-            icon: Icons.bookmark_border_rounded,
-            count: state.queueCount,
-            selected: state.view == 'queue',
-            onTap: () => onSelect('queue'),
+          KeyedSubtree(
+            key: const Key('nav-watch-later'),
+            child: _NavItem(
+              key: const Key('nav-queue'),
+              label: 'Guarda più tardi',
+              icon: state.view == 'queue'
+                  ? Icons.watch_later_rounded
+                  : Icons.watch_later_outlined,
+              count: state.watchLaterCount,
+              selected: state.view == 'queue',
+              onTap: () => onSelect('queue'),
+            ),
           ),
           _NavItem(
             key: const Key('nav-saved'),
@@ -528,7 +550,8 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = switch (state.view) {
       'new' => 'Nuovi',
-      'queue' => 'Coda',
+      'queue' => 'Guarda più tardi',
+      'watch-later' => 'Guarda più tardi',
       'saved' => 'Salvati',
       'rss' => 'Storico RSS',
       'channels' => 'Canali',
@@ -536,9 +559,12 @@ class _Header extends StatelessWidget {
     };
     final subtitle = switch (state.view) {
       'new' => '${state.visible.length} video da vedere',
-      'queue' => '${state.queueCount} video in coda',
+      'queue' => '${state.watchLaterCount} video da guardare',
+      'watch-later' => '${state.watchLaterCount} video da guardare',
       'saved' => '${state.savedCount} video offline',
-      'rss' => '${state.rssHistoryCount} video visti nel feed',
+      'rss' => state.rssChannel == null && state.search.trim().isEmpty
+          ? '${state.rssHistoryCount} video visti nel feed'
+          : '${state.visible.length} video · ${state.rssHistoryCount} totali',
       'channels' => '${state.channels.length} iscrizioni',
       _ => '${state.latestCount} canali · ${state.newCount} nuovi',
     };
@@ -653,39 +679,325 @@ class _FeedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showFilter = state.view == 'rss' && state.rssHistory.isNotEmpty;
+    final filter = showFilter
+        ? _RssChannelFilter(
+            state: state,
+            onSelect: (channelId) {
+              state.setRssChannel(channelId);
+              WidgetsBinding.instance.addPostFrameCallback((_) => onSelect());
+            },
+          )
+        : null;
+
     if (state.visible.isEmpty) {
-      return _EmptyState(state: state);
+      if (filter == null) return _EmptyState(state: state);
+      return Column(
+        children: [
+          filter,
+          Expanded(child: _EmptyState(state: state)),
+        ],
+      );
     }
 
-    return Focus(
+    final list = Focus(
       focusNode: listFocus,
       onKeyEvent: onKey,
       child: Scrollbar(
         controller: scrollController,
-        child: ListView.builder(
-          controller: scrollController,
-          padding: const EdgeInsets.only(top: 2, bottom: 24),
-          itemCount: state.visible.length,
-          itemBuilder: (context, index) {
-            final video = state.visible[index];
-            return VideoRow(
-              key: ValueKey(video.id),
-              video: video,
-              selected: index == state.selected,
-              hideDescription: state.hideDescriptions,
-              onTap: () {
-                state.select(index);
-                onSelect();
-              },
-              onPlay: () => onPlay(video),
-              onToggleWatched: () => state.toggleWatched(video),
-              onToggleQueued: () => state.toggleQueued(video),
-              onChannelTap: () => onChannelTap(video.channelId),
-            );
-          },
-        ),
+        child: state.view == 'rss' ? _buildRssList() : _buildFlatList(),
       ),
     );
+
+    if (filter == null) return list;
+    return Column(
+      children: [
+        filter,
+        Expanded(child: list),
+      ],
+    );
+  }
+
+  Widget _buildFlatList() {
+    return ListView.builder(
+      controller: scrollController,
+      padding: const EdgeInsets.only(top: 2, bottom: 24),
+      itemCount: state.visible.length,
+      itemBuilder: (context, index) {
+        return _videoRow(state.visible[index], index);
+      },
+    );
+  }
+
+  Widget _buildRssList() {
+    final entries = _rssEntries();
+    return ListView.builder(
+      controller: scrollController,
+      padding: const EdgeInsets.only(top: 2, bottom: 24),
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        if (entry is _RssGroupHeaderEntry) {
+          return _RssGroupHeader(entry: entry);
+        }
+        final videoEntry = entry as _RssVideoEntry;
+        return _videoRow(videoEntry.video, videoEntry.index);
+      },
+    );
+  }
+
+  Widget _videoRow(VideoItem video, int index) {
+    return VideoRow(
+      key: ValueKey(video.id),
+      video: video,
+      selected: index == state.selected,
+      hideDescription: state.hideDescriptions,
+      onTap: () {
+        state.select(index);
+        onSelect();
+      },
+      onPlay: () => onPlay(video),
+      onToggleWatched: () => state.toggleWatched(video),
+      onToggleQueued: () => state.toggleQueued(video),
+      onChannelTap: () => onChannelTap(video.channelId),
+      showWatchLaterDate: state.view == 'queue' ||
+          state.view == 'watch-later',
+    );
+  }
+
+  List<_RssEntry> _rssEntries() {
+    final counts = <String, int>{};
+    for (final video in state.visible) {
+      counts[video.channelId] = (counts[video.channelId] ?? 0) + 1;
+    }
+
+    final entries = <_RssEntry>[];
+    String? currentChannel;
+    for (var index = 0; index < state.visible.length; index++) {
+      final video = state.visible[index];
+      if (video.channelId != currentChannel) {
+        currentChannel = video.channelId;
+        entries.add(
+          _RssGroupHeaderEntry(
+            channelId: video.channelId,
+            title: video.channelTitle,
+            count: counts[video.channelId] ?? 0,
+          ),
+        );
+      }
+      entries.add(_RssVideoEntry(video, index));
+    }
+    return entries;
+  }
+}
+
+class _RssEntry {}
+
+class _RssGroupHeaderEntry extends _RssEntry {
+  _RssGroupHeaderEntry({
+    required this.channelId,
+    required this.title,
+    required this.count,
+  });
+
+  final String channelId;
+  final String title;
+  final int count;
+}
+
+class _RssVideoEntry extends _RssEntry {
+  _RssVideoEntry(this.video, this.index);
+
+  final VideoItem video;
+  final int index;
+}
+
+class _RssGroupHeader extends StatelessWidget {
+  const _RssGroupHeader({required this.entry});
+
+  final _RssGroupHeaderEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = entry.title.trim().isEmpty ? entry.channelId : entry.title;
+    final color = videoChannelColor(entry.channelId);
+    return Container(
+      key: ValueKey('rss-group-${entry.channelId}'),
+      height: _rssHeaderHeight,
+      padding: const EdgeInsets.fromLTRB(26, 14, 24, 6),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: ExpeditusColors.border)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 13,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            entry.count == 1 ? '1 video' : '${entry.count} video',
+            style: const TextStyle(
+              color: ExpeditusColors.muted,
+              fontSize: 10.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RssChannelFilter extends StatelessWidget {
+  const _RssChannelFilter({required this.state, required this.onSelect});
+
+  final AppState state;
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final summaries = summarizeRssChannels(state.rssHistory);
+    final total = summaries.fold<int>(0, (sum, item) => sum + item.count);
+    final selectedId = state.rssChannel;
+    final items = List<RssChannelSummary>.of(summaries);
+    if (selectedId != null &&
+        !items.any((item) => item.channelId == selectedId)) {
+      items.add(
+        RssChannelSummary(
+          channelId: selectedId,
+          title: selectedId,
+          count: 0,
+          latest: 0,
+        ),
+      );
+    }
+    final selected = selectedId == null
+        ? null
+        : items.firstWhere((item) => item.channelId == selectedId);
+    final matching = state.search.trim().isEmpty
+        ? total
+        : state.visible.length;
+
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: ExpeditusColors.border)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.filter_list_rounded,
+            size: 16,
+            color: ExpeditusColors.muted,
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Canale',
+            style: TextStyle(color: ExpeditusColors.muted, fontSize: 11.5),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 260,
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                key: const Key('rss-channel-filter'),
+                value: selectedId ?? '',
+                isDense: true,
+                isExpanded: true,
+                dropdownColor: ExpeditusColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(8),
+                style: const TextStyle(
+                  color: ExpeditusColors.text,
+                  fontSize: 12.5,
+                ),
+                icon: const Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: ExpeditusColors.muted,
+                ),
+                selectedItemBuilder: (context) => [
+                  Text(
+                    'Tutti i canali ($total)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  for (final summary in items)
+                    Text(
+                      _summaryLabel(summary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+                items: [
+                  DropdownMenuItem<String>(
+                    value: '',
+                    child: Text(
+                      'Tutti i canali ($total)',
+                      key: const Key('rss-channel-option-all'),
+                    ),
+                  ),
+                  for (final summary in items)
+                    DropdownMenuItem<String>(
+                      value: summary.channelId,
+                      child: Text(
+                        '${_summaryLabel(summary)} (${summary.count})',
+                        key: ValueKey(
+                          'rss-channel-option-${summary.channelId}',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) => onSelect(
+                  value == null || value.isEmpty ? null : value,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              selected == null
+                  ? '${summaries.length} canali · $matching video'
+                  : '${state.visible.length} video · ${_summaryLabel(selected)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 10.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _summaryLabel(RssChannelSummary summary) {
+    return summary.title.trim().isEmpty
+        ? summary.channelId
+        : summary.title;
   }
 }
 
@@ -704,8 +1016,8 @@ class _EmptyState extends StatelessWidget {
             ? 'La tua casella è vuota'
             : state.view == 'new'
                 ? 'Sei in pari'
-                : state.view == 'queue'
-                    ? 'La coda è vuota'
+                : state.view == 'queue' || state.view == 'watch-later'
+                    ? 'Guarda più tardi è vuoto'
                     : state.view == 'saved'
                         ? 'Nessun video salvato'
                         : 'Nessun video';
@@ -713,11 +1025,13 @@ class _EmptyState extends StatelessWidget {
         ? 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
         : noChannels
             ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
-            : state.view == 'saved'
-                ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
-                : state.view == 'rss'
-                    ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
-                    : 'Nessun nuovo video dai canali che segui.';
+            : state.view == 'queue' || state.view == 'watch-later'
+                ? 'Metti un video in Guarda più tardi con il tasto S o con l’icona dell’orologio nella riga del video.'
+                : state.view == 'saved'
+                    ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
+                    : state.view == 'rss'
+                        ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
+                        : 'Nessun nuovo video dai canali che segui.';
 
     return Center(
       child: ConstrainedBox(
@@ -841,7 +1155,7 @@ class _StatusBar extends StatelessWidget {
             ),
           const SizedBox(width: 16),
           Text(
-            '↑↓ muovi · Invio guarda · M letto · S coda',
+            '↑↓ muovi · Invio guarda · M letto · S guarda più tardi',
             style: TextStyle(
               color: ExpeditusColors.muted.withValues(alpha: 0.55),
               fontSize: 10.5,

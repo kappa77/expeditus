@@ -651,12 +651,15 @@ class _VideosTab extends StatelessWidget {
                 selected: filter == 'watched',
                 onTap: () => onFilter('watched'),
               ),
-              _FilterChip(
-                key: const Key('channel-filter-queue'),
-                label: 'In coda',
-                count: queued,
-                selected: filter == 'queue',
-                onTap: () => onFilter('queue'),
+              KeyedSubtree(
+                key: const Key('channel-filter-watch-later'),
+                child: _FilterChip(
+                  key: const Key('channel-filter-queue'),
+                  label: 'Guarda più tardi',
+                  count: queued,
+                  selected: filter == 'queue',
+                  onTap: () => onFilter('queue'),
+                ),
               ),
             ],
           ),
@@ -944,9 +947,12 @@ class _ChannelVideoTile extends StatelessWidget {
                             const SizedBox(width: 8),
                             const _Badge('Visto', ExpeditusColors.green),
                           ],
-                          if (video.queued) ...[
+                          if (video.watchLater) ...[
                             const SizedBox(width: 8),
-                            const _Badge('In coda', ExpeditusColors.accent),
+                            const _Badge(
+                              'Guarda più tardi',
+                              ExpeditusColors.accent,
+                            ),
                           ],
                           if (video.isDownloaded) ...[
                             const SizedBox(width: 8),
@@ -1062,18 +1068,23 @@ class _ChannelVideoTile extends StatelessWidget {
                         size: 19,
                       ),
                     ),
-                    IconButton(
-                      key: ValueKey('channel-queue-${video.id}'),
-                      tooltip: video.queued ? 'Togli dalla coda' : 'In coda',
-                      onPressed: onToggleQueued,
-                      icon: Icon(
-                        video.queued
-                            ? Icons.bookmark_rounded
-                            : Icons.bookmark_border_rounded,
-                        color: video.queued
-                            ? ExpeditusColors.accent
-                            : ExpeditusColors.muted,
-                        size: 19,
+                    KeyedSubtree(
+                      key: ValueKey('channel-watch-later-${video.id}'),
+                      child: IconButton(
+                        key: ValueKey('channel-queue-${video.id}'),
+                        tooltip: video.watchLater
+                            ? 'Rimuovi da Guarda più tardi'
+                            : 'Guarda più tardi',
+                        onPressed: onToggleQueued,
+                        icon: Icon(
+                          video.watchLater
+                              ? Icons.watch_later_rounded
+                              : Icons.watch_later_outlined,
+                          color: video.watchLater
+                              ? ExpeditusColors.accent
+                              : ExpeditusColors.muted,
+                          size: 19,
+                        ),
                       ),
                     ),
                     if (progress != null)

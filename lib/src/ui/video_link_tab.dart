@@ -39,7 +39,7 @@ class _VideoLinkTabState extends State<VideoLinkTab> {
         _busy = false;
         _message =
             'Aggiunto “${linked.video.title}” e iscritto a ${linked.channel.title}. '
-            'Il video è in coda.';
+            'Il video è in Guarda più tardi.';
         _link.clear();
       });
     } catch (e) {
@@ -58,7 +58,7 @@ class _VideoLinkTabState extends State<VideoLinkTab> {
       children: [
         const Text(
           'Incolla il link di un video YouTube. Expeditus trova il canale, '
-          'si iscrive automaticamente e mette il video in coda.',
+          'si iscrive automaticamente e salva il video in Guarda più tardi.',
           style: TextStyle(
             color: ExpeditusColors.muted,
             fontSize: 12,

@@ -66,6 +66,7 @@ class VideoItem {
     this.durationSeconds,
     this.status = 'new',
     this.queued = false,
+    this.queuedAt,
     this.progressSeconds = 0,
     this.keywords = const [],
     this.keywordsFetched = false,
@@ -97,6 +98,10 @@ class VideoItem {
   final String status;
 
   final bool queued;
+
+  /// When the video was put in the explicit watch later list.
+  final int? queuedAt;
+
   final int progressSeconds;
 
   /// YouTube search keywords for this video, when available.
@@ -127,6 +132,11 @@ class VideoItem {
 
   bool get isNew => status == 'new';
   bool get isWatched => status == 'watched';
+
+  /// Explicit watch later membership. The queue column is kept as the
+  /// persisted flag for backward compatibility.
+  bool get watchLater => queued;
+  int? get watchLaterAt => queuedAt;
   bool get isSeen => status == 'seen' || status == 'watched';
 
   DateTime get published => DateTime.fromMillisecondsSinceEpoch(publishedAt);
@@ -141,6 +151,7 @@ class VideoItem {
     int? durationSeconds,
     String? status,
     bool? queued,
+    int? queuedAt,
     int? progressSeconds,
     List<String>? keywords,
     bool? keywordsFetched,
@@ -164,6 +175,7 @@ class VideoItem {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       status: status ?? this.status,
       queued: queued ?? this.queued,
+      queuedAt: queuedAt ?? this.queuedAt,
       progressSeconds: progressSeconds ?? this.progressSeconds,
       keywords: keywords ?? this.keywords,
       keywordsFetched: keywordsFetched ?? this.keywordsFetched,
@@ -192,6 +204,7 @@ class VideoItem {
       durationSeconds: map['duration_seconds'] as int?,
       status: (map['status'] as String?) ?? 'new',
       queued: (map['queued'] as int?) == 1,
+      queuedAt: map['queued_at'] as int?,
       progressSeconds: (map['progress_seconds'] as int?) ?? 0,
       keywords: _parseKeywords(map['keywords']),
       keywordsFetched: (map['keywords_fetched'] as int?) == 1,

@@ -20,17 +20,18 @@ One row per channel. The latest video. That is the whole feed.
 - **Channel page with two tabs:** the recent archive and the channel history, with filters, search, tags, and offline downloads.
 - **Save videos for offline playback:** download a video from its channel page; it appears under **Saved** and plays from local storage.
 - **RSS mute and feed visibility:** stop new uploads from a channel, and independently choose whether its latest video appears in the **latest/New** list.
-- **Add a video from a link:** paste a YouTube video URL to subscribe to its channel automatically and put the video in your queue.
+- **Explicit Watch later list:** press `S` on a video to save it; the **Guarda più tardi** view lists saved videos in the order you added them, with the save time.
+- **Add a video from a link:** paste a YouTube video URL to subscribe to its channel automatically and save the video in Watch later.
 - **First-run onboarding:** the app opens on channel search with a short explanation.
-- **Local-first:** subscriptions, watch state, queue, and settings stay on your computer. No Google login.
+- **Local-first:** subscriptions, watch state, Watch later, and settings stay on your computer. No Google login.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
 - **Playback speed** from 0.25× to 3.50× in 0.25 steps, with an optional default speed per channel.
 - **Chapters and timestamped bookmarks:** jump to description chapters or save a bookmark at the current second with a personal note.
-- **RSS history:** every video ever seen in a feed is kept once, even after it leaves the current 15-item feed.
+- **RSS history grouped by channel:** every video ever seen in a feed is kept once, even after it leaves the current 15-item feed. The history is grouped under each channel and can be filtered by channel or searched.
 - **Refresh only one channel** from its page, without waiting for the whole subscription feed.
 - **±10 second seeking** with debounce: several quick presses become one combined jump.
-- **Keyboard-first:** move, open, mark watched, queue, search, and refresh without touching the mouse.
+- **Keyboard-first:** move, open, mark watched, save to Watch later, search, and refresh without touching the mouse.
 - **Focus mode:** hide descriptions and keep only channel and title.
 
 ## Install (Windows)
@@ -47,7 +48,7 @@ The installer is not code-signed yet, so Windows SmartScreen may show a warning.
 
 1. Launch Expeditus: the first-run screen opens channel search.
 2. Search a channel by name, or choose **Import** to load a Google Takeout `subscriptions.csv`, paste channel handles/URLs/IDs, or add a video from a link.
-3. Pick a video and press `Enter` to play it. Press `M` to mark it watched or `S` to add it to the queue.
+3. Pick a video and press `Enter` to play it. Press `M` to mark it watched or `S` to add it to Watch later.
 
 ## Keyboard shortcuts
 
@@ -56,7 +57,7 @@ The installer is not code-signed yet, so Windows SmartScreen may show a warning.
 | `↑` / `↓` or `J` / `K` | Move selection |
 | `Enter` | Play selected video |
 | `M` | Mark watched / unwatched |
-| `S` | Add to / remove from queue |
+| `S` or `W` | Add to / remove from Watch later |
 | `R` | Refresh subscriptions |
 | `/` | Focus search |
 | `Esc` | Clear search |

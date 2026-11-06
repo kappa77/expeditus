@@ -4,5 +4,5 @@
 /// The fallback is the local development version.
 const String kAppVersion = String.fromEnvironment(
   'APP_VERSION',
-  defaultValue: '1.0.5',
+  defaultValue: '1.0.7',
 );

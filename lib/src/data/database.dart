@@ -20,14 +20,17 @@ class AppDatabase {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
 
-    final support = await getApplicationSupportDirectory();
-    await Directory(support.path).create(recursive: true);
-    final path = pathOverride ?? p.join(support.path, 'expeditus.sqlite');
+    final path = pathOverride ??
+        p.join(
+          (await getApplicationSupportDirectory()).path,
+          'expeditus.sqlite',
+        );
+    await Directory(p.dirname(path)).create(recursive: true);
 
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 6,
+        version: 7,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -57,6 +60,7 @@ class AppDatabase {
               duration_seconds INTEGER,
               status TEXT NOT NULL DEFAULT 'new',
               queued INTEGER NOT NULL DEFAULT 0,
+              queued_at INTEGER,
               progress_seconds INTEGER NOT NULL DEFAULT 0,
               fetched_at INTEGER NOT NULL,
               keywords TEXT,
@@ -142,6 +146,12 @@ class AppDatabase {
             );
             await db.execute(
               'UPDATE videos SET first_seen_at = COALESCE(fetched_at, published_at, 0) WHERE first_seen_at IS NULL',
+            );
+          }
+          if (oldVersion < 7) {
+            await db.execute('ALTER TABLE videos ADD COLUMN queued_at INTEGER');
+            await db.execute(
+              'UPDATE videos SET queued_at = COALESCE(fetched_at, published_at, 0) WHERE queued = 1',
             );
           }
         },
@@ -251,13 +261,15 @@ class AppDatabase {
 
   Future<void> upsertVideo(VideoItem video) async {
     final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
     await db.rawInsert(
       '''
       INSERT INTO videos (
         id, channel_id, title, description, published_at, first_seen_at,
-        duration_seconds, status, queued, progress_seconds, fetched_at, source
+        duration_seconds, status, queued, queued_at, progress_seconds,
+        fetched_at, source
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
@@ -275,12 +287,13 @@ class AppDatabase {
         video.title,
         video.description,
         video.publishedAt,
-        video.firstSeenAt ?? DateTime.now().millisecondsSinceEpoch,
+        video.firstSeenAt ?? now,
         video.durationSeconds,
         video.status,
         video.queued ? 1 : 0,
+        video.queued ? (video.queuedAt ?? now) : null,
         video.progressSeconds,
-        DateTime.now().millisecondsSinceEpoch,
+        now,
         video.source,
       ],
     );
@@ -325,6 +338,7 @@ class AppDatabase {
     return rows.map(VideoItem.fromMap).toList();
   }
 
+  /// The explicit watch later list, ordered by when each video was saved.
   Future<List<VideoItem>> queue() async {
     final db = await database;
     final rows = await db.rawQuery('''
@@ -332,10 +346,12 @@ class AppDatabase {
       FROM videos v
       JOIN channels c ON c.id = v.channel_id
       WHERE v.queued = 1
-      ORDER BY v.published_at DESC
+      ORDER BY COALESCE(v.queued_at, v.published_at) DESC, v.published_at DESC
     ''');
     return rows.map(VideoItem.fromMap).toList();
   }
+
+  Future<List<VideoItem>> watchLater() => queue();
 
   Future<List<VideoItem>> videosForChannel(String channelId) async {
     final db = await database;
@@ -373,7 +389,11 @@ class AppDatabase {
     final db = await database;
     await db.update(
       'videos',
-      {'queued': queued ? 1 : 0},
+      {
+        'queued': queued ? 1 : 0,
+        'queued_at':
+            queued ? DateTime.now().millisecondsSinceEpoch : null,
+      },
       where: 'id = ?',
       whereArgs: [videoId],
     );

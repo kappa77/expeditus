@@ -8,7 +8,7 @@ Expeditus is a Flutter desktop application for Windows. It turns a set of YouTub
 
 - one latest upload per channel;
 - a per-channel archive of recent uploads;
-- local search, status filters, tags, queue, and watch state;
+- local search, status filters, tags, an explicit Watch later list, and watch state;
 - playback through direct media streams instead of the YouTube player;
 - optional SponsorBlock skipping.
 
@@ -80,11 +80,11 @@ SQLite database: `expeditus.sqlite`, in the application support directory.
 Tables:
 
 - `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, optional default playback rate, last error.
-- `videos`: id, channel, title, description, publication time, first-seen time, duration, status, queue flag, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
+- `videos`: id, channel, title, description, publication time, first-seen time, duration, status, watch-later flag, watch-later save time, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
 - `bookmarks`: id, video id, position seconds, personal note, creation time.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. All use `ALTER TABLE` migrations.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. All use `ALTER TABLE` migrations.
 
 ## Playback and ad avoidance
 
@@ -105,9 +105,15 @@ Chapters are parsed from the video description with timestamp lines such as `00:
 
 Bookmarks are stored in the `bookmarks` table with a second offset and a free-form personal note. They can be added from the outline dialog or from the player AppBar at the current position; they are local only and are deleted with their video row.
 
+### Watch later
+
+The **Guarda più tardi** view is the explicit watch-later list. The `videos.queued` flag marks membership and `videos.queued_at` records when the user saved the video. The list is ordered by `queued_at` descending, so it follows the order in which videos were added rather than their publication date; each row shows the save time. Playing or marking a video watched does not remove it from the list: removal is always an explicit action. The same list is available from the sidebar, the channel page filter, and the player toggle. `S` and `W` toggle membership from the main views.
+
 ### RSS history
 
 `rssHistory()` lists every video ever received from an RSS feed, ordered by first-seen time. `videos.id` is the primary key, so repeated feed refreshes update the existing row instead of creating duplicates; `first_seen_at` is preserved on conflict. Link-only imports are marked `source = 'link'` and excluded from this view. If a link-only video later appears in the RSS feed, its source is upgraded to `rss`.
+
+The **Storico RSS** view groups these rows by channel with `groupRssHistoryByChannel`. Groups are ordered by the most recent sighting in each channel, while videos keep the first-seen order inside a group. A channel dropdown filters the view; local search combines with that filter. Group headers show the number of matching videos, so counts update when a search is active. The filter is session-only and is cleared automatically if the selected channel no longer has history.
 
 ### Per-channel refresh
 
@@ -133,7 +139,7 @@ The download action in the channel page saves the best **muxed** stream to `down
 
 ### Video links and automatic subscription
 
-The import dialog has a **Link video** tab. It resolves a YouTube watch/short URL with `youtube_explode_dart`, reads the channel ID and video metadata, subscribes to the channel, stores the video, and sets it as queued. This works even when the video is older than the channel's current RSS window.
+The import dialog has a **Link video** tab. It resolves a YouTube watch/short URL with `youtube_explode_dart`, reads the channel ID and video metadata, subscribes to the channel, stores the video, and adds it to Watch later. This works even when the video is older than the channel's current RSS window.
 
 ### First run
 

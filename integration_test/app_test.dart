@@ -72,10 +72,46 @@ void main() {
     expect(find.text('Video A uno'), findsOneWidget);
     expect(find.text('Video A due'), findsOneWidget);
     expect(find.text('Video B uno'), findsOneWidget);
+
+    // The RSS history is grouped by channel, with a selector and counts.
+    expect(find.byKey(ValueKey('rss-group-$_channelA')), findsOneWidget);
+    expect(find.byKey(ValueKey('rss-group-$_channelB')), findsOneWidget);
+    expect(find.byKey(const Key('rss-channel-filter')), findsOneWidget);
+    expect(find.text('2 video'), findsOneWidget);
+    expect(find.text('1 video'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('rss-channel-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('rss-channel-option-$_channelB')));
+    await tester.pumpAndSettle();
+    expect(harness.state.rssChannel, _channelB);
+    expect(find.text('Video B uno'), findsOneWidget);
+    expect(find.text('Video A due'), findsNothing);
+    expect(find.byKey(ValueKey('rss-group-$_channelB')), findsOneWidget);
+    expect(find.byKey(ValueKey('rss-group-$_channelA')), findsNothing);
+
+    // Search combines with the channel grouping.
+    await tester.enterText(find.byKey(const Key('search-field')), 'A due');
+    await tester.pump();
+    expect(find.text('Video B uno'), findsNothing);
+    expect(find.text('Nessun risultato'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('search-field')), '');
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('rss-channel-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('rss-channel-option-all')));
+    await tester.pumpAndSettle();
+    expect(harness.state.rssChannel, isNull);
+    expect(find.byKey(ValueKey('rss-group-$_channelA')), findsOneWidget);
+    expect(find.byKey(ValueKey('rss-group-$_channelB')), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('nav-latest')));
     await tester.pumpAndSettle();
 
     // Local search only searches the subscriptions we have.
+    await tester.tap(find.byKey(const Key('search-field')));
+    await tester.pump();
     await tester.enterText(
       find.byKey(const Key('search-field')),
       'B uno',
@@ -111,6 +147,9 @@ void main() {
 
     await tester.tap(find.byKey(const Key('nav-queue')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('nav-watch-later')), findsOneWidget);
+    expect(find.text('Guarda più tardi'), findsWidgets);
+    expect(find.textContaining('salvato '), findsOneWidget);
     expect(find.text('Video B uno'), findsOneWidget);
     expect(find.text('Video A due'), findsNothing);
 

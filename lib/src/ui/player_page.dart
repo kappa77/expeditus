@@ -381,13 +381,15 @@ class _PlayerPageState extends State<PlayerPage> {
             ),
           ),
           IconButton(
-            tooltip: widget.video.queued ? 'Togli dalla coda' : 'In coda',
+            tooltip: widget.video.watchLater
+                ? 'Rimuovi da Guarda più tardi'
+                : 'Guarda più tardi',
             onPressed: () => widget.state.toggleQueued(widget.video),
             icon: Icon(
-              widget.video.queued
-                  ? Icons.bookmark_rounded
-                  : Icons.bookmark_border_rounded,
-              color: widget.video.queued
+              widget.video.watchLater
+                  ? Icons.watch_later_rounded
+                  : Icons.watch_later_outlined,
+              color: widget.video.watchLater
                   ? ExpeditusColors.accent
                   : ExpeditusColors.muted,
             ),
@@ -711,13 +713,15 @@ class _PlayerFooter extends StatelessWidget {
               Expanded(
                 flex: 1,
                 child: IconButton(
-                  tooltip: video.queued ? 'Togli dalla coda' : 'In coda',
+                  tooltip: video.watchLater
+                      ? 'Rimuovi da Guarda più tardi'
+                      : 'Guarda più tardi',
                   onPressed: onToggleQueued,
                   icon: Icon(
-                    video.queued
-                        ? Icons.bookmark_rounded
-                        : Icons.bookmark_border_rounded,
-                    color: video.queued
+                    video.watchLater
+                        ? Icons.watch_later_rounded
+                        : Icons.watch_later_outlined,
+                    color: video.watchLater
                         ? ExpeditusColors.accent
                         : ExpeditusColors.muted,
                     size: 18,
