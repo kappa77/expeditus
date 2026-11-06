@@ -8,6 +8,7 @@ import '../services/dlna/dlna_metadata.dart';
 import '../services/dlna/dlna_models.dart';
 import '../services/dlna/dlna_transport.dart';
 import '../services/dlna/media_server.dart';
+import '../services/dlna/network_profile.dart';
 import '../services/dlna/ssdp_discovery.dart';
 import '../services/dlna/windows_firewall.dart';
 import '../services/stream_resolver.dart';
@@ -32,19 +33,22 @@ class CastController extends ChangeNotifier {
     CastMediaServer? mediaServer,
     CastStreamResolver? resolver,
     FirewallService? firewall,
+    NetworkProfileService? networkProfile,
     this.discoveryTimeout = const Duration(seconds: 4),
   }) : discovery = discovery ?? SsdpDlnaDiscovery(),
        _transportFactory =
            transportFactory ?? ((device) => DlnaSoapTransport(device)),
        server = mediaServer ?? MediaServer(),
        _resolver = resolver ?? StreamResolver.resolveForCasting,
-       firewall = firewall ?? WindowsFirewallService();
+       firewall = firewall ?? WindowsFirewallService(),
+       networkProfile = networkProfile ?? WindowsNetworkProfileService();
 
   final DlnaDiscovery discovery;
   final CastTransportFactory _transportFactory;
   final CastMediaServer server;
   final CastStreamResolver _resolver;
   final FirewallService firewall;
+  final NetworkProfileService networkProfile;
   final Duration discoveryTimeout;
 
   List<DlnaDevice> devices = const [];
@@ -66,6 +70,12 @@ class CastController extends ChangeNotifier {
   bool firewallBusy = false;
   Uri? _currentMediaUri;
   bool _firewallChecked = false;
+
+  /// True when the active Windows network is "Public", so DLNA discovery is
+  /// blocked. The user can switch it to "Private" from the cast dialog.
+  bool networkProfileRequired = false;
+  bool networkProfileBusy = false;
+  bool _networkProfileChecked = false;
 
   Timer? _pollTimer;
   int _pollFailures = 0;
@@ -92,12 +102,18 @@ class CastController extends ChangeNotifier {
 
     discovering = true;
     discoveryError = null;
+    _networkProfileChecked = false;
     _notify();
     try {
       final found = await discovery.discover(timeout: discoveryTimeout);
       if (_disposed) return;
       devices = List.unmodifiable(found);
       hasDiscovered = true;
+      if (found.isEmpty) {
+        unawaited(_inspectNetworkProfile());
+      } else {
+        networkProfileRequired = false;
+      }
     } on Object catch (exception) {
       if (_disposed) return;
       discoveryError =
@@ -417,6 +433,9 @@ class CastController extends ChangeNotifier {
     firewallRequired = false;
     firewallBusy = false;
     _firewallChecked = false;
+    networkProfileRequired = false;
+    networkProfileBusy = false;
+    _networkProfileChecked = false;
     playback = CastPlaybackState.idle;
     device = null;
     connection = CastConnectionState.disconnected;
@@ -459,6 +478,48 @@ class CastController extends ChangeNotifier {
     }
     _notify();
     return allowed;
+  }
+
+  /// Switches the Windows network from Public to Private through UAC, or
+  /// verifies that it is already Private.
+  Future<bool> allowPrivateNetwork() async {
+    if (_disposed || networkProfileBusy) return false;
+    networkProfileBusy = true;
+    error = null;
+    _notify();
+    var fixed = false;
+    try {
+      final current = await networkProfile.status();
+      fixed =
+          current == NetworkProfileStatus.private ||
+          await networkProfile.makePrivate();
+    } on Object {
+      fixed = false;
+    }
+    if (_disposed) return fixed;
+    networkProfileBusy = false;
+    networkProfileRequired = !fixed;
+    if (!fixed) {
+      error =
+          'Impossibile modificare il tipo di rete. Apri Impostazioni > '
+          'Rete e Internet e imposta la rete come "Privata".';
+    } else {
+      _networkProfileChecked = false;
+    }
+    _notify();
+    return fixed;
+  }
+
+  Future<void> _inspectNetworkProfile() async {
+    if (_networkProfileChecked) return;
+    _networkProfileChecked = true;
+    final status = await networkProfile.status();
+    if (_disposed) return;
+    final required = status == NetworkProfileStatus.public;
+    if (required != networkProfileRequired) {
+      networkProfileRequired = required;
+      _notify();
+    }
   }
 
   void clearDiscoveryError() {

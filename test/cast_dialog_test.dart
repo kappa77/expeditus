@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:expeditus/src/services/dlna/dlna_models.dart';
 import 'package:expeditus/src/services/dlna/dlna_transport.dart';
 import 'package:expeditus/src/services/dlna/media_server.dart';
+import 'package:expeditus/src/services/dlna/network_profile.dart';
 import 'package:expeditus/src/services/dlna/ssdp_discovery.dart';
 import 'package:expeditus/src/state/cast_controller.dart';
 import 'package:expeditus/src/ui/cast_dialog.dart';
@@ -106,19 +107,36 @@ class _Server implements CastMediaServer {
   Future<void> close() async {}
 }
 
+class _NetworkProfile implements NetworkProfileService {
+  NetworkProfileStatus statusValue = NetworkProfileStatus.private;
+  bool makePrivateResult = true;
+
+  @override
+  Future<NetworkProfileStatus> status() async => statusValue;
+
+  @override
+  Future<bool> makePrivate() async {
+    if (makePrivateResult) statusValue = NetworkProfileStatus.private;
+    return makePrivateResult;
+  }
+}
+
 void main() {
   late _Discovery discovery;
   late _Transport transport;
+  late _NetworkProfile networkProfile;
   late CastController controller;
 
   setUp(() {
     discovery = _Discovery();
     transport = _Transport();
+    networkProfile = _NetworkProfile();
     controller = CastController(
       discovery: discovery,
       transportFactory: (_) => transport,
       mediaServer: _Server(),
       resolver: (_) async => throw Exception('non usato'),
+      networkProfile: networkProfile,
       discoveryTimeout: Duration.zero,
     );
   });
@@ -271,5 +289,31 @@ void main() {
 
     expect(discovery.calls, 2);
     expect(find.text('TV Salotto'), findsOneWidget);
+  });
+
+  testWidgets('mostra il pulsante rete privata quando la rete è pubblica', (
+    tester,
+  ) async {
+    discovery.devices = [];
+    networkProfile.statusValue = NetworkProfileStatus.public;
+
+    await openDialog(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('cast-allow-private-network')), findsOneWidget);
+    expect(find.textContaining('impostata come'), findsOneWidget);
+    expect(find.text('Rendi la rete privata'), findsOneWidget);
+  });
+
+  testWidgets('mostra i suggerimenti quando non trova dispositivi', (
+    tester,
+  ) async {
+    discovery.devices = [];
+
+    await openDialog(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Suggerimenti per la ricerca'), findsOneWidget);
+    expect(find.textContaining('renderer DLNA'), findsOneWidget);
   });
 }

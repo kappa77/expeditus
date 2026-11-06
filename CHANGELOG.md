@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0
+
+Automatic network setup and troubleshooting for DLNA discovery.
+
+### Added
+
+- Windows network detection: when no DLNA device is found and the active
+  network is categorised as **Public**, the cast dialog offers a
+  **Rendi la rete privata** button that switches it to Private through UAC
+  and repeats the search. Discovery is blocked on Public networks because
+  Windows applies the built-in Network Discovery rules only to Private
+  networks.
+- A troubleshooting checklist in the cast dialog when no device is found
+  (TV on and on the same network, network Private, DLNA renderer enabled on
+  the TV, firewall access).
+
 ## 2.0.0
 
 DLNA casting to TVs and MediaRenderers on the local network.

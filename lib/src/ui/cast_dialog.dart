@@ -98,6 +98,16 @@ class _CastDialogState extends State<CastDialog> {
     await _controller.discover(force: true);
   }
 
+  Future<void> _allowPrivateNetworkAndRefresh() async {
+    final fixed = await _controller.allowPrivateNetwork();
+    if (!mounted) return;
+    if (!fixed) {
+      setState(() => _connectError = _controller.error);
+      return;
+    }
+    await _controller.discover(force: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -149,10 +159,13 @@ class _CastDialogState extends State<CastDialog> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    if (_controller.isConnected)
-                      _buildConnected()
-                    else
-                      _buildDiscovery(),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: _controller.isConnected
+                            ? _buildConnected()
+                            : _buildDiscovery(),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -354,13 +367,15 @@ class _CastDialogState extends State<CastDialog> {
                 : null,
           ),
         ],
-        const SizedBox(height: 10),
-        Flexible(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 300),
-            child: SingleChildScrollView(child: _deviceList(controller)),
+        if (controller.networkProfileRequired) ...[
+          const SizedBox(height: 10),
+          _NetworkCard(
+            busy: controller.networkProfileBusy,
+            onFix: _allowPrivateNetworkAndRefresh,
           ),
-        ),
+        ],
+        const SizedBox(height: 10),
+        _deviceList(controller),
         if (_connecting != null) ...[
           const SizedBox(height: 12),
           Container(
@@ -433,8 +448,7 @@ class _CastDialogState extends State<CastDialog> {
             const SizedBox(height: 8),
             Text(
               controller.hasDiscovered
-                  ? 'Nessun dispositivo DLNA trovato.\n'
-                        'Verifica che TV e PC siano sulla stessa rete.'
+                  ? 'Nessun dispositivo DLNA trovato.'
                   : 'Nessun dispositivo disponibile.',
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -464,6 +478,7 @@ class _CastDialogState extends State<CastDialog> {
                       : 'Consenti accesso rete',
                 ),
               ),
+              const _TroubleshootingCard(),
             ],
           ],
         ),
@@ -591,6 +606,151 @@ class _ErrorBox extends StatelessWidget {
               ),
               child: const Text('Riprova'),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NetworkCard extends StatelessWidget {
+  const _NetworkCard({required this.busy, required this.onFix});
+
+  final bool busy;
+  final VoidCallback onFix;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ExpeditusColors.accentSoft,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'La rete Windows è impostata come "Pubblica", quindi la ricerca '
+            'dei dispositivi DLNA è bloccata. Rendi la rete "Privata" per '
+            'trovare la TV.',
+            style: TextStyle(fontSize: 11.5, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const Key('cast-allow-private-network'),
+            onPressed: busy ? null : onFix,
+            icon: busy
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.lock_open_rounded, size: 17),
+            label: Text(
+              busy ? 'Attesa conferma Windows…' : 'Rendi la rete privata',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TroubleshootingCard extends StatelessWidget {
+  const _TroubleshootingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ExpeditusColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ExpeditusColors.border),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Suggerimenti per la ricerca',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+              color: ExpeditusColors.muted,
+            ),
+          ),
+          SizedBox(height: 8),
+          _TroubleshootingStep(
+            '1',
+            'Accendi la TV e verifica che sia collegata alla stessa rete '
+            'Wi-Fi o LAN del PC.',
+          ),
+          _TroubleshootingStep(
+            '2',
+            'Assicurati che la rete Windows sia "Privata" e non "Pubblica" '
+            '(usa il pulsante sopra per correggerla).',
+          ),
+          _TroubleshootingStep(
+            '3',
+            'Verifica che sulla TV sia attivo il renderer DLNA (es. '
+            '"Condivisione" o "Screen Mirroring").',
+          ),
+          _TroubleshootingStep(
+            '4',
+            'Consenti a Expeditus l\'accesso alla rete se Windows Firewall '
+            'lo richiede.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TroubleshootingStep extends StatelessWidget {
+  const _TroubleshootingStep(this.number, this.text);
+
+  final String number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: ExpeditusColors.accentSoft,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              number,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: ExpeditusColors.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 11.5,
+                height: 1.4,
+              ),
+            ),
+          ),
         ],
       ),
     );

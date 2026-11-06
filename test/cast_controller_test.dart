@@ -4,6 +4,7 @@ import 'package:expeditus/src/models.dart';
 import 'package:expeditus/src/services/dlna/dlna_models.dart';
 import 'package:expeditus/src/services/dlna/dlna_transport.dart';
 import 'package:expeditus/src/services/dlna/media_server.dart';
+import 'package:expeditus/src/services/dlna/network_profile.dart';
 import 'package:expeditus/src/services/dlna/windows_firewall.dart';
 import 'package:expeditus/src/services/dlna/ssdp_discovery.dart';
 import 'package:expeditus/src/services/stream_resolver.dart';
@@ -70,6 +71,26 @@ class _FakeFirewall implements FirewallService {
     allowCalls++;
     if (allowResult) statusValue = FirewallStatus.allowed;
     return allowResult;
+  }
+}
+
+class _FakeNetworkProfile implements NetworkProfileService {
+  NetworkProfileStatus statusValue = NetworkProfileStatus.private;
+  bool makePrivateResult = true;
+  int statusCalls = 0;
+  int makePrivateCalls = 0;
+
+  @override
+  Future<NetworkProfileStatus> status() async {
+    statusCalls++;
+    return statusValue;
+  }
+
+  @override
+  Future<bool> makePrivate() async {
+    makePrivateCalls++;
+    if (makePrivateResult) statusValue = NetworkProfileStatus.private;
+    return makePrivateResult;
   }
 }
 
@@ -199,6 +220,7 @@ void main() {
   late _FakeTransport transport;
   late _FakeServer server;
   late _FakeFirewall firewall;
+  late _FakeNetworkProfile networkProfile;
   late CastController controller;
 
   setUp(() {
@@ -206,6 +228,7 @@ void main() {
     transport = _FakeTransport();
     server = _FakeServer();
     firewall = _FakeFirewall();
+    networkProfile = _FakeNetworkProfile();
     controller = CastController(
       discovery: discovery,
       transportFactory: (_) => transport,
@@ -216,6 +239,7 @@ void main() {
         kind: 'muxed',
       ),
       firewall: firewall,
+      networkProfile: networkProfile,
       discoveryTimeout: Duration.zero,
     );
   });
@@ -505,5 +529,44 @@ void main() {
     await controller.syncTo(const Duration(seconds: 2));
 
     expect(transport.lastSeek, const Duration(seconds: 2));
+  });
+
+  test('una rete pubblica è segnalata quando non ci sono dispositivi', () async {
+    discovery.devices = [];
+    networkProfile.statusValue = NetworkProfileStatus.public;
+
+    await controller.discover();
+    await pumpEventQueue();
+
+    expect(controller.devices, isEmpty);
+    expect(controller.networkProfileRequired, isTrue);
+    expect(networkProfile.statusCalls, 1);
+  });
+
+  test('allowPrivateNetwork corregge la rete e pulisce il flag', () async {
+    discovery.devices = [];
+    networkProfile.statusValue = NetworkProfileStatus.public;
+
+    await controller.discover();
+    await pumpEventQueue();
+    expect(controller.networkProfileRequired, isTrue);
+
+    expect(await controller.allowPrivateNetwork(), isTrue);
+    expect(controller.networkProfileRequired, isFalse);
+    expect(networkProfile.makePrivateCalls, 1);
+    expect(controller.error, isNull);
+  });
+
+  test('allowPrivateNetwork espone un errore se UAC viene annullato', () async {
+    discovery.devices = [];
+    networkProfile.statusValue = NetworkProfileStatus.public;
+    networkProfile.makePrivateResult = false;
+
+    await controller.discover();
+    await pumpEventQueue();
+
+    expect(await controller.allowPrivateNetwork(), isFalse);
+    expect(controller.networkProfileRequired, isTrue);
+    expect(controller.error, contains('Rete e Internet'));
   });
 }
