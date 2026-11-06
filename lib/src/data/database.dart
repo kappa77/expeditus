@@ -30,7 +30,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 7,
+        version: 8,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -394,6 +394,41 @@ class AppDatabase {
     );
   }
 
+  /// The separate local MP4 library, newest addition first.
+  Future<List<LocalVideo>> localVideos() async {
+    final db = await database;
+    final rows = await db.query(
+      'local_videos',
+      orderBy: 'added_at DESC, title COLLATE NOCASE',
+    );
+    return rows.map(LocalVideo.fromMap).toList();
+  }
+
+  /// Adds a file to the local library. Re-adding the same path refreshes its
+  /// metadata but keeps the original added time, so the list does not jump.
+  Future<void> upsertLocalVideo(LocalVideo video) async {
+    final db = await database;
+    await db.rawInsert(
+      '''
+      INSERT INTO local_videos (path, title, added_at, duration_seconds)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
+        title = excluded.title,
+        duration_seconds = COALESCE(
+          excluded.duration_seconds,
+          local_videos.duration_seconds
+        )
+      ''',
+      [video.path, video.title, video.addedAt, video.durationSeconds],
+    );
+  }
+
+  /// Removes an entry from the local library; the file itself is untouched.
+  Future<void> deleteLocalVideo(String path) async {
+    final db = await database;
+    await db.delete('local_videos', where: 'path = ?', whereArgs: [path]);
+  }
+
   Future<void> setKeywords(String videoId, List<String> keywords) async {
     final db = await database;
     await db.update(
@@ -488,6 +523,14 @@ Future<void> _createSchema(Database db) async {
       note TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL,
       FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS local_videos (
+      path TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      added_at INTEGER NOT NULL,
+      duration_seconds INTEGER
     )
   ''');
   await db.execute('''
@@ -596,5 +639,15 @@ Future<void> _migrate(Database db, int oldVersion, int newVersion) async {
       'UPDATE videos SET queued_at = COALESCE(fetched_at, published_at, 0) '
       'WHERE queued = 1 AND queued_at IS NULL',
     );
+  }
+  if (oldVersion < 8) {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_videos (
+        path TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        added_at INTEGER NOT NULL,
+        duration_seconds INTEGER
+      )
+    ''');
   }
 }

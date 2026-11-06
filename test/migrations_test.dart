@@ -203,6 +203,45 @@ void main() {
     },
   );
 
+  test('da v7 a v8 crea la libreria locale senza perdere i video', () async {
+    final path = p.join(temp.path, 'v7.sqlite');
+    final legacy = await _createLegacyDb(
+      path,
+      version: 7,
+      channelsSql: _v6ChannelsSql,
+      videosSql: _v6VideosSql(includeQueuedAt: true),
+    );
+    await legacy.insert('channels', _channelRow());
+    await legacy.insert('videos', _videoRow());
+    await legacy.close();
+
+    final upgraded = AppDatabase(pathOverride: path);
+    addTearDown(upgraded.close);
+    await upgraded.open();
+
+    expect((await upgraded.watchLater()).single.id, 'a1');
+    expect(await upgraded.localVideos(), isEmpty);
+
+    await upgraded.upsertLocalVideo(
+      const LocalVideo(
+        path: '/video/locale.mp4',
+        title: 'Video locale',
+        addedAt: 42,
+      ),
+    );
+    expect((await upgraded.localVideos()).single.title, 'Video locale');
+    await upgraded.close();
+
+    final raw = await databaseFactoryFfi.openDatabase(path);
+    addTearDown(raw.close);
+    final tables = await raw.query(
+      'sqlite_master',
+      columns: ['name'],
+      where: "type = 'table'",
+    );
+    expect(tables.map((row) => row['name']), contains('local_videos'));
+  });
+
   test('migrazioni parziali da v1 completano lo schema senza errori', () async {
     final path = p.join(temp.path, 'v1_partial.sqlite');
     final legacy = await _createLegacyDb(

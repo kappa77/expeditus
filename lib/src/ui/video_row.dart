@@ -12,10 +12,12 @@ class VideoRow extends StatefulWidget {
     required this.hideDescription,
     required this.onTap,
     required this.onPlay,
-    required this.onToggleWatched,
-    required this.onToggleQueued,
+    this.onToggleWatched,
+    this.onToggleQueued,
     this.onChannelTap,
+    this.onRemove,
     this.showWatchLaterDate = false,
+    this.showAddedDate = false,
   });
 
   final VideoItem video;
@@ -23,12 +25,16 @@ class VideoRow extends StatefulWidget {
   final bool hideDescription;
   final VoidCallback onTap;
   final VoidCallback onPlay;
-  final VoidCallback onToggleWatched;
-  final VoidCallback onToggleQueued;
+  final VoidCallback? onToggleWatched;
+  final VoidCallback? onToggleQueued;
   final VoidCallback? onChannelTap;
+  final VoidCallback? onRemove;
 
   /// Shows when the video was saved instead of when it was published.
   final bool showWatchLaterDate;
+
+  /// Shows when a local file was added to the library.
+  final bool showAddedDate;
 
   @override
   State<VideoRow> createState() => _VideoRowState();
@@ -48,7 +54,9 @@ class _VideoRowState extends State<VideoRow> {
         !widget.hideDescription && video.description.trim().isNotEmpty;
     final dateLabel = widget.showWatchLaterDate && video.watchLaterAt != null
         ? 'salvato ${relativeTime(DateTime.fromMillisecondsSinceEpoch(video.watchLaterAt!))}'
-        : relativeTime(video.published);
+        : widget.showAddedDate
+            ? 'aggiunto ${relativeTime(video.published)}'
+            : relativeTime(video.published);
 
     return SizedBox(
       height: _rowHeight,
@@ -98,7 +106,9 @@ class _VideoRowState extends State<VideoRow> {
                         children: [
                           Flexible(
                             child: Tooltip(
-                              message: 'Apri canale',
+                              message: widget.onChannelTap == null
+                                  ? 'File locale'
+                                  : 'Apri canale',
                               child: InkWell(
                                 key: ValueKey(
                                   'channel-link-${video.channelId}',
@@ -179,7 +189,7 @@ class _VideoRowState extends State<VideoRow> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    if (video.isDownloaded)
+                    if (video.isDownloaded && !video.isLocal)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 3),
                         child: Icon(
@@ -188,7 +198,7 @@ class _VideoRowState extends State<VideoRow> {
                           color: ExpeditusColors.green,
                         ),
                       ),
-                    if (video.watchLater)
+                    if (video.watchLater && !video.isLocal)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 4),
                         child: Tooltip(
@@ -229,22 +239,32 @@ class _VideoRowState extends State<VideoRow> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _MiniAction(
-                            tooltip: 'Segna visto',
-                            icon: video.isWatched
-                                ? Icons.check_circle_rounded
-                                : Icons.check_circle_outline_rounded,
-                            onTap: widget.onToggleWatched,
-                          ),
-                          _MiniAction(
-                            tooltip: video.watchLater
-                                ? 'Rimuovi da Guarda più tardi'
-                                : 'Guarda più tardi',
-                            icon: video.watchLater
-                                ? Icons.watch_later_rounded
-                                : Icons.watch_later_outlined,
-                            onTap: widget.onToggleQueued,
-                          ),
+                          if (widget.onRemove != null)
+                            _MiniAction(
+                              tooltip: 'Rimuovi dalla lista',
+                              icon: Icons.remove_circle_outline_rounded,
+                              onTap: widget.onRemove!,
+                            )
+                          else ...[
+                            if (widget.onToggleWatched != null)
+                              _MiniAction(
+                                tooltip: 'Segna visto',
+                                icon: video.isWatched
+                                    ? Icons.check_circle_rounded
+                                    : Icons.check_circle_outline_rounded,
+                                onTap: widget.onToggleWatched!,
+                              ),
+                            if (widget.onToggleQueued != null)
+                              _MiniAction(
+                                tooltip: video.watchLater
+                                    ? 'Rimuovi da Guarda più tardi'
+                                    : 'Guarda più tardi',
+                                icon: video.watchLater
+                                    ? Icons.watch_later_rounded
+                                    : Icons.watch_later_outlined,
+                                onTap: widget.onToggleQueued!,
+                              ),
+                          ],
                         ],
                       ),
                   ],

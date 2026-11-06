@@ -54,6 +54,58 @@ class Channel {
   }
 }
 
+/// A video file stored on disk, kept separate from the YouTube subscriptions.
+class LocalVideo {
+  const LocalVideo({
+    required this.path,
+    required this.title,
+    required this.addedAt,
+    this.durationSeconds,
+  });
+
+  final String path;
+
+  /// Title from the MP4 metadata, or the file name when metadata is absent.
+  final String title;
+
+  /// Milliseconds since epoch.
+  final int addedAt;
+
+  final int? durationSeconds;
+
+  factory LocalVideo.fromMap(Map<String, Object?> map) {
+    return LocalVideo(
+      path: map['path'] as String,
+      title: (map['title'] as String?) ?? '',
+      addedAt: (map['added_at'] as int?) ?? 0,
+      durationSeconds: map['duration_seconds'] as int?,
+    );
+  }
+
+  /// Adapts the file to the player's view model without putting it in the
+  /// YouTube video tables.
+  VideoItem toVideoItem() {
+    return VideoItem(
+      id: 'local:$path',
+      channelId: 'local',
+      channelTitle: 'Video locale',
+      title: title,
+      description: path,
+      publishedAt: addedAt,
+      durationSeconds: durationSeconds,
+      localPath: path,
+      source: 'local',
+    );
+  }
+}
+
+class LocalVideoImportResult {
+  const LocalVideoImportResult({required this.added, this.errors = const []});
+
+  final int added;
+  final List<String> errors;
+}
+
 class VideoItem {
   const VideoItem({
     required this.id,
@@ -124,8 +176,10 @@ class VideoItem {
   /// True once a chapter lookup has been attempted and stored.
   final bool chaptersFetched;
 
-  /// `rss` or `link`. Link-only videos are not part of the RSS history.
+  /// `rss`, `link`, or `local` (the virtual row used by the local library).
   final String source;
+
+  bool get isLocal => source == 'local';
 
   bool get isDownloaded => localPath != null && downloadStatus == 'ready';
   bool get isDownloading => downloadStatus == 'downloading';
@@ -141,7 +195,9 @@ class VideoItem {
 
   DateTime get published => DateTime.fromMillisecondsSinceEpoch(publishedAt);
 
-  String get url => 'https://www.youtube.com/watch?v=$id';
+  String get url => isLocal
+      ? (localPath == null ? '' : Uri.file(localPath!).toString())
+      : 'https://www.youtube.com/watch?v=$id';
 
   /// Poster used by the cast overlay and by the DLNA metadata.
   String get thumbnailUrl =>

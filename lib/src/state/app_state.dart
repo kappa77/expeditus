@@ -7,6 +7,7 @@ import '../data/database.dart';
 import '../models.dart';
 import '../models/app_update.dart';
 import '../services/import_service.dart';
+import '../services/local_video_service.dart';
 import '../services/rss_service.dart';
 import '../services/sponsorblock_service.dart';
 import '../services/video_chapters_service.dart';
@@ -36,6 +37,7 @@ class AppState extends ChangeNotifier {
     VideoDownloader? downloader,
     VideoLinkService? videoLink,
     VideoChaptersProvider? chapterService,
+    LocalVideoService? localVideos,
     UpdateChecker? updateChecker,
     AppVersion? appVersion,
     CastController? castController,
@@ -46,6 +48,7 @@ class AppState extends ChangeNotifier {
         downloader = downloader ?? VideoDownloadService(),
         videoLink = videoLink ?? VideoLinkService(),
         chapterService = chapterService ?? VideoChaptersService(),
+        localVideoService = localVideos ?? const LocalVideoService(),
         currentVersion = appVersion ?? _buildVersion(),
         updateChecker = updateChecker ??
             UpdateService(currentVersion: appVersion ?? _buildVersion()),
@@ -59,6 +62,7 @@ class AppState extends ChangeNotifier {
   final VideoDownloader downloader;
   final VideoLinkService videoLink;
   final VideoChaptersProvider chapterService;
+  final LocalVideoService localVideoService;
   final AppVersion currentVersion;
   final UpdateChecker updateChecker;
   final CastController castController;
@@ -68,6 +72,7 @@ class AppState extends ChangeNotifier {
   List<VideoItem> queueItems = [];
   List<VideoItem> saved = [];
   List<VideoItem> rssHistory = [];
+  List<LocalVideo> localVideos = [];
   List<VideoItem> visible = [];
   final Map<String, double> downloadProgress = {};
 
@@ -120,6 +125,7 @@ class AppState extends ChangeNotifier {
   int get latestCount => latest.length;
   int get savedCount => saved.length;
   int get rssHistoryCount => rssHistory.length;
+  int get localCount => localVideos.length;
 
   static const Duration _updateCheckInterval = Duration(hours: 6);
   static const _updateLastCheckKey = 'updateLastCheck';
@@ -205,6 +211,7 @@ class AppState extends ChangeNotifier {
     queueItems = await db.queue();
     saved = await db.downloadedVideos();
     rssHistory = await db.rssHistory();
+    localVideos = await db.localVideos();
     if (rssChannel != null &&
         !rssHistory.any((video) => video.channelId == rssChannel)) {
       rssChannel = null;
@@ -359,6 +366,8 @@ class AppState extends ChangeNotifier {
         source = watchLaterItems;
       case 'saved':
         source = saved;
+      case 'local':
+        source = localVideos.map((video) => video.toVideoItem());
       case 'rss':
         source = groupRssHistoryByChannel(rssHistory);
         if (rssChannel != null) {
@@ -507,6 +516,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markSeen(VideoItem video) async {
+    if (video.isLocal) return;
     if (!video.isNew || _seenInSession.contains(video.id)) return;
     _seenInSession.add(video.id);
     await db.setStatus(
@@ -518,6 +528,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markWatched(VideoItem video) async {
+    if (video.isLocal) return;
     if (video.isWatched || _watchedInSession.contains(video.id)) return;
     _watchedInSession.add(video.id);
     await db.setStatus(
@@ -529,6 +540,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> toggleWatched(VideoItem video) async {
+    if (video.isLocal) return;
     _watchedInSession.remove(video.id);
     final next = video.isWatched ? 'seen' : 'watched';
     await db.setStatus(
@@ -542,6 +554,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> toggleQueued(VideoItem video) async {
+    if (video.isLocal) return;
     await db.setQueued(video.id, !video.queued);
     await reload();
   }
@@ -554,6 +567,50 @@ class AppState extends ChangeNotifier {
       _seenInSession.add(video.id);
       await db.setStatus(video.id, 'seen', watchedAt: now);
     }
+    await reload();
+  }
+
+  /// Adds local MP4 files to the separate library. Metadata errors never
+  /// discard a file: the title falls back to its name.
+  Future<LocalVideoImportResult> addLocalVideos(Iterable<String> paths) async {
+    final errors = <String>[];
+    final unique = <String>{};
+    var added = 0;
+
+    for (final path in paths) {
+      if (!unique.add(path)) continue;
+      try {
+        final metadata = await localVideoService.readMetadata(path);
+        await db.upsertLocalVideo(
+          LocalVideo(
+            path: path,
+            title: localVideoService.titleFor(
+              path,
+              metadataTitle: metadata.title,
+            ),
+            addedAt: DateTime.now().millisecondsSinceEpoch,
+            durationSeconds: metadata.durationSeconds,
+          ),
+        );
+        added++;
+      } catch (e) {
+        errors.add('${path.split(RegExp(r'[\\/]')).last}: ${_shortError(e)}');
+      }
+    }
+
+    await reload();
+    return LocalVideoImportResult(added: added, errors: errors);
+  }
+
+  Future<void> addLocalVideo(String path) async {
+    await addLocalVideos([path]);
+  }
+
+  /// Removes an entry from the local library without deleting the file.
+  Future<void> removeLocalVideo(VideoItem video) async {
+    final path = video.localPath;
+    if (path == null) return;
+    await db.deleteLocalVideo(path);
     await reload();
   }
 

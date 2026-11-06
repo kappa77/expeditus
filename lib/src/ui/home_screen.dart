@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -88,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onClearSearch: _clearSearch,
                       onRefresh: () => state.refresh(force: true),
                       onImport: () => _openImport(),
+                      onAddLocalVideos: _addLocalVideos,
                       onMarkAllSeen: state.markAllSeen,
                     ),
                     Expanded(
@@ -104,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               onPlay: _play,
                               onKey: _onKey,
                               onChannelTap: _openChannelById,
+                              onAddLocalVideos: _addLocalVideos,
                             ),
                     ),
                     _StatusBar(
@@ -164,6 +167,40 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
+    _listFocus.requestFocus();
+  }
+
+  Future<void> _addLocalVideos() async {
+    final files = await openFiles(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Video MP4', extensions: ['mp4']),
+      ],
+    );
+    if (files.isEmpty || !mounted) return;
+
+    final result = await widget.state.addLocalVideos(
+      files.map((file) => file.path),
+    );
+    if (!mounted) return;
+
+    final parts = <String>[];
+    if (result.added > 0) {
+      parts.add(
+        result.added == 1
+            ? '1 video aggiunto'
+            : '${result.added} video aggiunti',
+      );
+    }
+    if (result.errors.isNotEmpty) {
+      parts.add('${result.errors.length} errori');
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          parts.isEmpty ? 'Nessun video aggiunto.' : parts.join(' · '),
+        ),
+      ),
+    );
     _listFocus.requestFocus();
   }
 
@@ -258,6 +295,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final video = state.selectedVideo;
       if (video != null) state.toggleQueued(video);
       return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.delete ||
+        key == LogicalKeyboardKey.backspace) {
+      final video = state.selectedVideo;
+      if (video != null && video.isLocal) {
+        state.removeLocalVideo(video);
+        return KeyEventResult.handled;
+      }
     }
     if (key == LogicalKeyboardKey.keyR) {
       state.refresh(force: true);
@@ -363,75 +408,91 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          _NavItem(
-            key: const Key('nav-latest'),
-            label: 'Ultimi',
-            icon: Icons.bolt_rounded,
-            count: state.latestCount,
-            selected: state.view == 'latest',
-            onTap: () => onSelect('latest'),
-          ),
-          _NavItem(
-            key: const Key('nav-new'),
-            label: 'Nuovi',
-            icon: Icons.fiber_new_rounded,
-            count: state.newCount,
-            selected: state.view == 'new',
-            onTap: () => onSelect('new'),
-          ),
-          KeyedSubtree(
-            key: const Key('nav-watch-later'),
-            child: _NavItem(
-              key: const Key('nav-queue'),
-              label: 'Guarda più tardi',
-              icon: state.view == 'queue'
-                  ? Icons.watch_later_rounded
-                  : Icons.watch_later_outlined,
-              count: state.watchLaterCount,
-              selected: state.view == 'queue',
-              onTap: () => onSelect('queue'),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _NavItem(
+                    key: const Key('nav-latest'),
+                    label: 'Ultimi',
+                    icon: Icons.bolt_rounded,
+                    count: state.latestCount,
+                    selected: state.view == 'latest',
+                    onTap: () => onSelect('latest'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-new'),
+                    label: 'Nuovi',
+                    icon: Icons.fiber_new_rounded,
+                    count: state.newCount,
+                    selected: state.view == 'new',
+                    onTap: () => onSelect('new'),
+                  ),
+                  KeyedSubtree(
+                    key: const Key('nav-watch-later'),
+                    child: _NavItem(
+                      key: const Key('nav-queue'),
+                      label: 'Guarda più tardi',
+                      icon: state.view == 'queue'
+                          ? Icons.watch_later_rounded
+                          : Icons.watch_later_outlined,
+                      count: state.watchLaterCount,
+                      selected: state.view == 'queue',
+                      onTap: () => onSelect('queue'),
+                    ),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-saved'),
+                    label: 'Salvati',
+                    icon: Icons.download_done_rounded,
+                    count: state.savedCount,
+                    selected: state.view == 'saved',
+                    onTap: () => onSelect('saved'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-local'),
+                    label: 'Video locali',
+                    icon: Icons.video_file_outlined,
+                    count: state.localCount,
+                    selected: state.view == 'local',
+                    onTap: () => onSelect('local'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-rss-history'),
+                    label: 'Storico RSS',
+                    icon: Icons.history_rounded,
+                    count: state.rssHistoryCount,
+                    selected: state.view == 'rss',
+                    onTap: () => onSelect('rss'),
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(),
+                  const SizedBox(height: 10),
+                  _NavItem(
+                    key: const Key('nav-channels'),
+                    label: 'Canali',
+                    icon: Icons.subscriptions_outlined,
+                    count: state.channels.length,
+                    selected: state.view == 'channels',
+                    onTap: () => onSelect('channels'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-import'),
+                    label: 'Importa',
+                    icon: Icons.add_circle_outline_rounded,
+                    onTap: onOpenImport,
+                  ),
+                  _NavItem(
+                    key: const Key('nav-channel-search'),
+                    label: 'Cerca canale',
+                    icon: Icons.person_search_rounded,
+                    onTap: onSearchChannel,
+                  ),
+                ],
+              ),
             ),
           ),
-          _NavItem(
-            key: const Key('nav-saved'),
-            label: 'Salvati',
-            icon: Icons.download_done_rounded,
-            count: state.savedCount,
-            selected: state.view == 'saved',
-            onTap: () => onSelect('saved'),
-          ),
-          _NavItem(
-            key: const Key('nav-rss-history'),
-            label: 'Storico RSS',
-            icon: Icons.history_rounded,
-            count: state.rssHistoryCount,
-            selected: state.view == 'rss',
-            onTap: () => onSelect('rss'),
-          ),
-          const SizedBox(height: 10),
-          const Divider(),
-          const SizedBox(height: 10),
-          _NavItem(
-            key: const Key('nav-channels'),
-            label: 'Canali',
-            icon: Icons.subscriptions_outlined,
-            count: state.channels.length,
-            selected: state.view == 'channels',
-            onTap: () => onSelect('channels'),
-          ),
-          _NavItem(
-            key: const Key('nav-import'),
-            label: 'Importa',
-            icon: Icons.add_circle_outline_rounded,
-            onTap: onOpenImport,
-          ),
-          _NavItem(
-            key: const Key('nav-channel-search'),
-            label: 'Cerca canale',
-            icon: Icons.person_search_rounded,
-            onTap: onSearchChannel,
-          ),
-          const Spacer(),
           TextButton.icon(
             key: const Key('nav-updates'),
             onPressed: onOpenUpdates,
@@ -567,6 +628,7 @@ class _Header extends StatelessWidget {
     required this.onClearSearch,
     required this.onRefresh,
     required this.onImport,
+    required this.onAddLocalVideos,
     required this.onMarkAllSeen,
   });
 
@@ -577,6 +639,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onClearSearch;
   final VoidCallback onRefresh;
   final VoidCallback onImport;
+  final VoidCallback onAddLocalVideos;
   final VoidCallback onMarkAllSeen;
 
   @override
@@ -586,6 +649,7 @@ class _Header extends StatelessWidget {
       'queue' => 'Guarda più tardi',
       'watch-later' => 'Guarda più tardi',
       'saved' => 'Salvati',
+      'local' => 'Video locali',
       'rss' => 'Storico RSS',
       'channels' => 'Canali',
       _ => 'Ultimi',
@@ -595,6 +659,7 @@ class _Header extends StatelessWidget {
       'queue' => '${state.watchLaterCount} video da guardare',
       'watch-later' => '${state.watchLaterCount} video da guardare',
       'saved' => '${state.savedCount} video offline',
+      'local' => '${state.localCount} file MP4 sul computer',
       'rss' => state.rssChannel == null && state.search.trim().isEmpty
           ? '${state.rssHistoryCount} video visti nel feed'
           : '${state.visible.length} video · ${state.rssHistoryCount} totali',
@@ -632,7 +697,8 @@ class _Header extends StatelessWidget {
           ),
           if (state.newCount > 0 &&
               state.view != 'channels' &&
-              state.view != 'rss') ...[
+              state.view != 'rss' &&
+              state.view != 'local') ...[
             TextButton(
               onPressed: onMarkAllSeen,
               child: const Text('Segna letti'),
@@ -656,35 +722,49 @@ class _Header extends StatelessWidget {
                 focusNode: searchFocus,
                 onChanged: onSearch,
                 style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  hintText: 'Cerca nelle iscrizioni…',
-                  prefixIcon: Icon(Icons.search_rounded, size: 18),
-                  prefixIconConstraints:
-                      BoxConstraints(minWidth: 36, minHeight: 36),
+                decoration: InputDecoration(
+                  hintText: state.view == 'local'
+                      ? 'Cerca video locali…'
+                      : 'Cerca nelle iscrizioni…',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            key: const Key('refresh-button'),
-            tooltip: 'Aggiorna (R)',
-            onPressed: state.refreshing ? null : onRefresh,
-            icon: state.refreshing
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_rounded),
-          ),
+          if (state.view != 'local') ...[
+            const SizedBox(width: 8),
+            IconButton(
+              key: const Key('refresh-button'),
+              tooltip: 'Aggiorna (R)',
+              onPressed: state.refreshing ? null : onRefresh,
+              icon: state.refreshing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+          ],
           const SizedBox(width: 2),
-          FilledButton.icon(
-            key: const Key('import-button'),
-            onPressed: onImport,
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('Importa'),
-          ),
+          if (state.view == 'local')
+            FilledButton.icon(
+              key: const Key('add-local-video-button'),
+              onPressed: onAddLocalVideos,
+              icon: const Icon(Icons.video_library_outlined, size: 18),
+              label: const Text('Aggiungi video'),
+            )
+          else
+            FilledButton.icon(
+              key: const Key('import-button'),
+              onPressed: onImport,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Importa'),
+            ),
         ],
       ),
     );
@@ -700,6 +780,7 @@ class _FeedView extends StatelessWidget {
     required this.onPlay,
     required this.onKey,
     required this.onChannelTap,
+    required this.onAddLocalVideos,
   });
 
   final AppState state;
@@ -709,6 +790,7 @@ class _FeedView extends StatelessWidget {
   final Future<void> Function(VideoItem) onPlay;
   final KeyEventResult Function(FocusNode, KeyEvent) onKey;
   final ValueChanged<String> onChannelTap;
+  final VoidCallback onAddLocalVideos;
 
   @override
   Widget build(BuildContext context) {
@@ -724,11 +806,21 @@ class _FeedView extends StatelessWidget {
         : null;
 
     if (state.visible.isEmpty) {
-      if (filter == null) return _EmptyState(state: state);
+      if (filter == null) {
+        return _EmptyState(
+          state: state,
+          onAddLocalVideos: onAddLocalVideos,
+        );
+      }
       return Column(
         children: [
           filter,
-          Expanded(child: _EmptyState(state: state)),
+          Expanded(
+            child: _EmptyState(
+              state: state,
+              onAddLocalVideos: onAddLocalVideos,
+            ),
+          ),
         ],
       );
     }
@@ -790,11 +882,21 @@ class _FeedView extends StatelessWidget {
         onSelect();
       },
       onPlay: () => onPlay(video),
-      onToggleWatched: () => state.toggleWatched(video),
-      onToggleQueued: () => state.toggleQueued(video),
-      onChannelTap: () => onChannelTap(video.channelId),
+      onToggleWatched: video.isLocal
+          ? null
+          : () => state.toggleWatched(video),
+      onToggleQueued: video.isLocal
+          ? null
+          : () => state.toggleQueued(video),
+      onChannelTap: video.isLocal
+          ? null
+          : () => onChannelTap(video.channelId),
+      onRemove: video.isLocal
+          ? () => state.removeLocalVideo(video)
+          : null,
       showWatchLaterDate: state.view == 'queue' ||
           state.view == 'watch-later',
+      showAddedDate: video.isLocal,
     );
   }
 
@@ -1035,36 +1137,47 @@ class _RssChannelFilter extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.state});
+  const _EmptyState({
+    required this.state,
+    required this.onAddLocalVideos,
+  });
 
   final AppState state;
+  final VoidCallback onAddLocalVideos;
 
   @override
   Widget build(BuildContext context) {
     final filtered = state.search.trim().isNotEmpty;
+    final local = state.view == 'local';
     final noChannels = state.channels.isEmpty;
     final title = filtered
         ? 'Nessun risultato'
-        : noChannels
-            ? 'La tua casella è vuota'
-            : state.view == 'new'
-                ? 'Sei in pari'
-                : state.view == 'queue' || state.view == 'watch-later'
-                    ? 'Guarda più tardi è vuoto'
-                    : state.view == 'saved'
-                        ? 'Nessun video salvato'
-                        : 'Nessun video';
+        : local
+            ? 'Nessun video locale'
+            : noChannels
+                ? 'La tua casella è vuota'
+                : state.view == 'new'
+                    ? 'Sei in pari'
+                    : state.view == 'queue' || state.view == 'watch-later'
+                        ? 'Guarda più tardi è vuoto'
+                        : state.view == 'saved'
+                            ? 'Nessun video salvato'
+                            : 'Nessun video';
     final message = filtered
-        ? 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
-        : noChannels
-            ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
-            : state.view == 'queue' || state.view == 'watch-later'
-                ? 'Metti un video in Guarda più tardi con il tasto S o con l’icona dell’orologio nella riga del video.'
-                : state.view == 'saved'
-                    ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
-                    : state.view == 'rss'
-                        ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
-                        : 'Nessun nuovo video dai canali che segui.';
+        ? local
+            ? 'Prova con un altro termine.'
+            : 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
+        : local
+            ? 'Aggiungi un file MP4 dal computer. Il titolo viene letto dai metadati del file, oppure dal nome del file.'
+            : noChannels
+                ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
+                : state.view == 'queue' || state.view == 'watch-later'
+                    ? 'Metti un video in Guarda più tardi con il tasto S o con l’icona dell’orologio nella riga del video.'
+                    : state.view == 'saved'
+                        ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
+                        : state.view == 'rss'
+                            ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
+                            : 'Nessun nuovo video dai canali che segui.';
 
     return Center(
       child: ConstrainedBox(
@@ -1073,7 +1186,11 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              noChannels ? Icons.inbox_outlined : Icons.check_circle_outline,
+              local
+                  ? Icons.video_file_outlined
+                  : noChannels
+                      ? Icons.inbox_outlined
+                      : Icons.check_circle_outline,
               size: 42,
               color: ExpeditusColors.muted.withValues(alpha: 0.7),
             ),
@@ -1095,7 +1212,15 @@ class _EmptyState extends StatelessWidget {
                 height: 1.45,
               ),
             ),
-            if (noChannels) ...[
+            if (local) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                key: const Key('empty-add-local-button'),
+                onPressed: onAddLocalVideos,
+                icon: const Icon(Icons.video_library_outlined, size: 18),
+                label: const Text('Aggiungi video MP4'),
+              ),
+            ] else if (noChannels) ...[
               const SizedBox(height: 18),
               FilledButton.icon(
                 key: const Key('empty-import-button'),
@@ -1119,7 +1244,7 @@ class _EmptyState extends StatelessWidget {
                 label: const Text('Importa iscrizioni'),
               ),
             ],
-            if (!noChannels && !filtered) ...[
+            if (!local && !noChannels && !filtered) ...[
               const SizedBox(height: 10),
               Text(
                 'R per aggiornare · / per cercare',
