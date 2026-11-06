@@ -5,15 +5,19 @@ import 'package:flutter/foundation.dart';
 
 import '../data/database.dart';
 import '../models.dart';
+import '../models/app_update.dart';
 import '../services/import_service.dart';
 import '../services/rss_service.dart';
 import '../services/sponsorblock_service.dart';
 import '../services/video_chapters_service.dart';
 import '../services/video_download_service.dart';
 import '../services/video_link_service.dart';
+import '../services/update_service.dart';
 import '../services/video_tags_service.dart';
+import '../util/app_version.dart';
 import '../util/chapter_parser.dart';
 import '../util/rss_grouping.dart';
+import '../version.dart';
 
 double _snapPlaybackRate(double value) {
   final clamped = value.clamp(0.25, 3.5).toDouble();
@@ -31,13 +35,18 @@ class AppState extends ChangeNotifier {
     VideoDownloader? downloader,
     VideoLinkService? videoLink,
     VideoChaptersProvider? chapterService,
+    UpdateChecker? updateChecker,
+    AppVersion? appVersion,
   })  : rss = rss ?? RssService(),
         resolver = resolver ?? YouTubeResolver(),
         sponsorBlock = sponsorBlock ?? SponsorBlockService(),
         tags = tags ?? VideoTagsService(),
         downloader = downloader ?? VideoDownloadService(),
         videoLink = videoLink ?? VideoLinkService(),
-        chapterService = chapterService ?? VideoChaptersService();
+        chapterService = chapterService ?? VideoChaptersService(),
+        currentVersion = appVersion ?? _buildVersion(),
+        updateChecker = updateChecker ??
+            UpdateService(currentVersion: appVersion ?? _buildVersion());
 
   final AppDatabase db;
   final RssService rss;
@@ -47,6 +56,8 @@ class AppState extends ChangeNotifier {
   final VideoDownloader downloader;
   final VideoLinkService videoLink;
   final VideoChaptersProvider chapterService;
+  final AppVersion currentVersion;
+  final UpdateChecker updateChecker;
 
   List<Channel> channels = [];
   List<VideoItem> latest = [];
@@ -76,11 +87,21 @@ class AppState extends ChangeNotifier {
   double playbackRate = 1.0;
   bool onboardingSeen = false;
 
+  AppRelease? latestRelease;
+  DateTime? updateLastCheck;
+  String? updateSkippedVersion;
+  String? updateEtag;
+  String? updateCachedRelease;
+  String? updateError;
+  bool updateChecking = false;
+  bool updateFromCache = false;
+
   bool importing = false;
   String? importStatus;
   final List<String> importErrors = [];
 
   Timer? _timer;
+  Timer? _updateTimer;
   bool _disposed = false;
   final Set<String> _seenInSession = {};
   final Set<String> _watchedInSession = {};
@@ -95,6 +116,33 @@ class AppState extends ChangeNotifier {
   int get latestCount => latest.length;
   int get savedCount => saved.length;
   int get rssHistoryCount => rssHistory.length;
+
+  static const Duration _updateCheckInterval = Duration(hours: 6);
+  static const _updateLastCheckKey = 'updateLastCheck';
+  static const _updateSkippedVersionKey = 'updateSkippedVersion';
+  static const _updateEtagKey = 'updateEtag';
+  static const _updateCachedReleaseKey = 'updateCachedRelease';
+  static const _updateLastErrorKey = 'updateLastError';
+
+  bool get hasUpdate {
+    final release = latestRelease;
+    if (release == null || release.draft) return false;
+    if (release.prerelease && !currentVersion.isPreRelease) return false;
+    if (!release.isNewerThan(currentVersion)) return false;
+    return updateSkippedVersion != release.version.canonical;
+  }
+
+  bool get updateSkipped =>
+      latestRelease != null &&
+      updateSkippedVersion == latestRelease!.version.canonical;
+
+  String get currentVersionLabel => 'v${currentVersion.canonical}';
+
+  static AppVersion _buildVersion() =>
+      AppVersion.tryParse(kAppVersion) ?? AppVersion.parse('0.0.0');
+
+  static String? _nonEmpty(String? value) =>
+      value == null || value.trim().isEmpty ? null : value;
 
   VideoItem? get selectedVideo {
     if (visible.isEmpty) return null;
@@ -123,11 +171,27 @@ class AppState extends ChangeNotifier {
       }
     }
 
+    updateLastCheck =
+        DateTime.tryParse(settings[_updateLastCheckKey] ?? '')?.toLocal();
+    updateSkippedVersion = _nonEmpty(settings[_updateSkippedVersionKey]);
+    updateEtag = _nonEmpty(settings[_updateEtagKey]);
+    updateCachedRelease = _nonEmpty(settings[_updateCachedReleaseKey]);
+    updateError = _nonEmpty(settings[_updateLastErrorKey]);
+    if (updateCachedRelease != null) {
+      latestRelease = AppRelease.fromJsonString(updateCachedRelease!);
+    }
+    final skipped = AppVersion.tryParse(updateSkippedVersion);
+    if (skipped != null && !skipped.isNewerThan(currentVersion)) {
+      updateSkippedVersion = null;
+      await db.deleteSetting(_updateSkippedVersionKey);
+    }
+
     channels = await db.getChannels();
     await reload();
     loading = false;
     _notify();
     _startTimer();
+    _startUpdateTimer();
     unawaited(refresh(force: false));
   }
 
@@ -143,6 +207,109 @@ class AppState extends ChangeNotifier {
     }
     _applyFilter();
     _notify();
+  }
+
+  /// Checks GitHub Releases for a newer version.
+  ///
+  /// Automatic checks are throttled to one attempt every six hours; a manual
+  /// check bypasses both the throttle and the ETag cache. A failed check never
+  /// interrupts the app: [updateError] is exposed in the update dialog.
+  Future<void> checkForUpdates({bool manual = false}) async {
+    if (_disposed || updateChecking) return;
+    if (!manual &&
+        updateLastCheck != null &&
+        DateTime.now().difference(updateLastCheck!) < _updateCheckInterval) {
+      return;
+    }
+
+    updateChecking = true;
+    updateError = null;
+    _notify();
+
+    UpdateCheckResult result;
+    try {
+      result = await updateChecker.check(
+        etag: manual ? null : updateEtag,
+        cachedBody: updateCachedRelease,
+        bypassCache: manual,
+      );
+    } on Object catch (error) {
+      result = UpdateCheckResult(
+        checkedAt: DateTime.now(),
+        error: 'Controllo aggiornamenti non riuscito: $error',
+      );
+    }
+    if (_disposed) return;
+
+    updateLastCheck = result.checkedAt.toLocal();
+    updateFromCache = result.fromCache;
+    updateError = result.error;
+    if (result.release != null) {
+      latestRelease = result.release;
+      updateEtag = result.etag;
+      if (result.rawBody != null) updateCachedRelease = result.rawBody;
+    }
+
+    final skipped = AppVersion.tryParse(updateSkippedVersion);
+    if (skipped != null && !skipped.isNewerThan(currentVersion)) {
+      updateSkippedVersion = null;
+    }
+
+    updateChecking = false;
+    try {
+      await _persistUpdateState();
+    } on Object catch (error) {
+      updateError = 'Impossibile salvare lo stato aggiornamenti: $error';
+    }
+    _notify();
+  }
+
+  Future<void> skipUpdateVersion() async {
+    final release = latestRelease;
+    if (release == null) return;
+    updateSkippedVersion = release.version.canonical;
+    try {
+      await db.setSetting(_updateSkippedVersionKey, updateSkippedVersion!);
+    } on Object catch (error) {
+      updateError = 'Impossibile salvare la versione saltata: $error';
+    }
+    _notify();
+  }
+
+  Future<void> clearSkippedUpdateVersion() async {
+    updateSkippedVersion = null;
+    try {
+      await db.deleteSetting(_updateSkippedVersionKey);
+    } on Object catch (error) {
+      updateError = 'Impossibile ripristinare la versione saltata: $error';
+    }
+    _notify();
+  }
+
+  Future<void> _persistUpdateState() async {
+    await _writeUpdateSetting(
+      _updateLastCheckKey,
+      updateLastCheck?.toUtc().toIso8601String(),
+    );
+    await _writeUpdateSetting(_updateSkippedVersionKey, updateSkippedVersion);
+    await _writeUpdateSetting(_updateEtagKey, updateEtag);
+    await _writeUpdateSetting(_updateCachedReleaseKey, updateCachedRelease);
+    await _writeUpdateSetting(_updateLastErrorKey, updateError);
+  }
+
+  Future<void> _writeUpdateSetting(String key, String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return db.deleteSetting(key);
+    }
+    return db.setSetting(key, value);
+  }
+
+  void _startUpdateTimer() {
+    _updateTimer?.cancel();
+    _updateTimer = Timer.periodic(
+      _updateCheckInterval,
+      (_) => unawaited(checkForUpdates()),
+    );
   }
 
   void setView(String next) {
@@ -691,6 +858,8 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _updateTimer?.cancel();
+    updateChecker.close();
     rss.close();
     resolver.close();
     sponsorBlock.close();

@@ -2,6 +2,8 @@
 // a single desktop window. It is isolated here and can be replaced later.
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:media_kit/media_kit.dart';
@@ -42,6 +44,7 @@ Future<void> main() async {
     final state = AppState(db);
     await state.init();
     runApp(ExpeditusApp(state: state));
+    unawaited(state.checkForUpdates());
   } catch (error, stack) {
     runApp(_FatalErrorApp(error: error, stack: stack));
   }

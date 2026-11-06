@@ -8,12 +8,12 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../util/rss_grouping.dart';
-import '../version.dart';
 import 'channel_page.dart';
 import 'channels_view.dart';
 import 'import_dialog.dart';
 import 'player_page.dart';
 import 'settings_dialog.dart';
+import 'update_dialog.dart';
 import 'video_row.dart';
 
 const double _rssHeaderHeight = 44;
@@ -73,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onOpenImport: () => _openImport(),
                 onSearchChannel: () => _openImport(initialTab: 2),
                 onOpenSettings: _openSettings,
+                onOpenUpdates: _openUpdates,
                 onSelect: _selectView,
               ),
               const VerticalDivider(width: 1),
@@ -105,7 +106,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               onChannelTap: _openChannelById,
                             ),
                     ),
-                    _StatusBar(state: state),
+                    _StatusBar(
+                      state: state,
+                      onOpenUpdates: _openUpdates,
+                    ),
                   ],
                 ),
               ),
@@ -168,6 +172,11 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (_) => SettingsDialog(state: widget.state),
     );
+    if (mounted) _listFocus.requestFocus();
+  }
+
+  Future<void> _openUpdates() async {
+    await showUpdateDialog(context, widget.state);
     if (mounted) _listFocus.requestFocus();
   }
 
@@ -304,6 +313,7 @@ class _Sidebar extends StatelessWidget {
     required this.onOpenImport,
     required this.onSearchChannel,
     required this.onOpenSettings,
+    required this.onOpenUpdates,
     required this.onSelect,
   });
 
@@ -311,6 +321,7 @@ class _Sidebar extends StatelessWidget {
   final VoidCallback onOpenImport;
   final VoidCallback onSearchChannel;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenUpdates;
   final ValueChanged<String> onSelect;
 
   @override
@@ -421,6 +432,28 @@ class _Sidebar extends StatelessWidget {
             onTap: onSearchChannel,
           ),
           const Spacer(),
+          TextButton.icon(
+            key: const Key('nav-updates'),
+            onPressed: onOpenUpdates,
+            icon: Icon(
+              state.hasUpdate
+                  ? Icons.system_update_alt_rounded
+                  : Icons.system_update_alt_outlined,
+              size: 18,
+              color: state.hasUpdate ? ExpeditusColors.accent : null,
+            ),
+            label: Text(
+              state.hasUpdate && state.latestRelease != null
+                  ? 'Aggiorna a v${state.latestRelease!.version.canonical}'
+                  : 'Aggiornamenti',
+            ),
+            style: TextButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              foregroundColor: state.hasUpdate
+                  ? ExpeditusColors.accent
+                  : ExpeditusColors.muted,
+            ),
+          ),
           TextButton.icon(
             key: const Key('settings-button'),
             onPressed: onOpenSettings,
@@ -1104,9 +1137,10 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.state});
+  const _StatusBar({required this.state, required this.onOpenUpdates});
 
   final AppState state;
+  final VoidCallback onOpenUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -1155,7 +1189,7 @@ class _StatusBar extends StatelessWidget {
             ),
           const SizedBox(width: 16),
           Text(
-            '↑↓ muovi · Invio guarda · M letto · S guarda più tardi',
+            '↑↓ · Invio · M · S',
             style: TextStyle(
               color: ExpeditusColors.muted.withValues(alpha: 0.55),
               fontSize: 10.5,
@@ -1168,13 +1202,61 @@ class _StatusBar extends StatelessWidget {
             color: ExpeditusColors.border,
           ),
           const SizedBox(width: 10),
-          Text(
-            'v$kAppVersion',
-            key: const Key('app-version'),
-            style: const TextStyle(
-              color: ExpeditusColors.muted,
-              fontSize: 10.5,
-              fontFeatures: [FontFeature.tabularFigures()],
+          Tooltip(
+            message: state.hasUpdate
+                ? 'Aggiornamento disponibile: v${state.latestRelease!.version.canonical}'
+                : 'Aggiornamenti',
+            child: InkWell(
+              key: const Key('updates-button'),
+              onTap: onOpenUpdates,
+              borderRadius: BorderRadius.circular(5),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (state.updateChecking)
+                      const SizedBox(
+                        width: 10,
+                        height: 10,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      )
+                    else if (state.hasUpdate)
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: ExpeditusColors.accent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    if (state.updateChecking || state.hasUpdate)
+                      const SizedBox(width: 6),
+                    Text(
+                      'v${state.currentVersion.canonical}',
+                      key: const Key('app-version'),
+                      style: TextStyle(
+                        color: state.hasUpdate
+                            ? ExpeditusColors.accent
+                            : ExpeditusColors.muted,
+                        fontSize: 10.5,
+                        fontWeight: state.hasUpdate
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    if (state.hasUpdate) ...[
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.system_update_alt_rounded,
+                        size: 12,
+                        color: ExpeditusColors.accent,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],

@@ -5,12 +5,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:expeditus/src/app.dart';
 import 'package:expeditus/src/data/database.dart';
+import 'package:expeditus/src/models/app_update.dart';
 import 'package:expeditus/src/services/import_service.dart';
 import 'package:expeditus/src/services/rss_service.dart';
 import 'package:expeditus/src/services/sponsorblock_service.dart';
 import 'package:expeditus/src/services/video_download_service.dart';
+import 'package:expeditus/src/services/update_service.dart';
 import 'package:expeditus/src/services/video_tags_service.dart';
 import 'package:expeditus/src/state/app_state.dart';
+import 'package:expeditus/src/util/app_version.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:http/http.dart' as http;
@@ -497,6 +500,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('player-page')), findsNothing);
   });
+
+  testWidgets('mostra e gestisce un aggiornamento disponibile', (
+    tester,
+  ) async {
+    final checker = _FakeUpdateChecker(_updateRelease('v1.0.9'));
+    final harness = await _Harness.create(
+      updateChecker: checker,
+      appVersion: AppVersion.parse('1.0.8'),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(ExpeditusApp(state: harness.state));
+    await tester.pumpAndSettle();
+
+    await harness.state.checkForUpdates(manual: true);
+    await tester.pumpAndSettle();
+
+    expect(harness.state.hasUpdate, isTrue);
+    expect(find.byKey(const Key('nav-updates')), findsOneWidget);
+    expect(find.text('Aggiorna a v1.0.9'), findsOneWidget);
+    expect(find.byKey(const Key('updates-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('nav-updates')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('update-dialog')), findsOneWidget);
+    expect(find.text('v1.0.9'), findsOneWidget);
+    expect(find.byKey(const Key('update-notes')), findsOneWidget);
+    expect(find.byKey(const Key('update-download')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('update-skip')));
+    await tester.pumpAndSettle();
+    expect(harness.state.hasUpdate, isFalse);
+    expect(harness.state.updateSkipped, isTrue);
+    expect(find.byKey(const Key('update-restore-skipped')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('update-restore-skipped')));
+    await tester.pumpAndSettle();
+    expect(harness.state.hasUpdate, isTrue);
+    expect(find.byKey(const Key('update-download')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('update-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('update-dialog')), findsNothing);
+  });
 }
 
 Future<void> _pumpUntil(
@@ -524,7 +571,11 @@ class _Harness {
   final AppDatabase db;
   final Directory temp;
 
-  static Future<_Harness> create({bool completeOnboarding = true}) async {
+  static Future<_Harness> create({
+    bool completeOnboarding = true,
+    UpdateChecker? updateChecker,
+    AppVersion? appVersion,
+  }) async {
     final temp = await Directory.systemTemp.createTemp('expeditus_e2e_');
     final db = AppDatabase(pathOverride: p.join(temp.path, 'expeditus.sqlite'));
     await db.open();
@@ -539,6 +590,8 @@ class _Harness {
       downloader: _FakeDownloader(
         Directory(p.join(temp.path, 'downloads')),
       ),
+      updateChecker: updateChecker,
+      appVersion: appVersion,
     );
     await state.init();
     if (completeOnboarding) {
@@ -698,6 +751,50 @@ class _VideoFixture {
   final String published;
 }
 
+
+class _FakeUpdateChecker implements UpdateChecker {
+  _FakeUpdateChecker(this.release);
+
+  final AppRelease release;
+  int calls = 0;
+
+  @override
+  Future<UpdateCheckResult> check({
+    String? etag,
+    String? cachedBody,
+    bool bypassCache = false,
+  }) async {
+    calls++;
+    return UpdateCheckResult(
+      release: release,
+      isNewer: true,
+      asset: release.assetForWindows(),
+      checkedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  void close() {}
+}
+
+AppRelease _updateRelease(String tag) {
+  final version = tag.replaceFirst('v', '');
+  final json = <String, dynamic>{
+    'tag_name': tag,
+    'name': 'Expeditus $version',
+    'body': 'Note di aggiornamento',
+    'html_url': 'https://github.com/kappa77/expeditus/releases/tag/$tag',
+    'assets': [
+      {
+        'name': 'ExpeditusSetup-$version.exe',
+        'browser_download_url':
+            'https://github.com/kappa77/expeditus/releases/download/$tag/ExpeditusSetup-$version.exe',
+        'size': 1000,
+      },
+    ],
+  };
+  return AppRelease.fromJson(json)!;
+}
 
 class _FakeTags implements VideoTagsProvider {
   @override

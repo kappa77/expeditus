@@ -23,12 +23,13 @@ One row per channel. The latest video. That is the whole feed.
 - **Explicit Watch later list:** press `S` on a video to save it; the **Guarda più tardi** view lists saved videos in the order you added them, with the save time.
 - **Add a video from a link:** paste a YouTube video URL to subscribe to its channel automatically and save the video in Watch later.
 - **First-run onboarding:** the app opens on channel search with a short explanation.
-- **Local-first:** subscriptions, watch state, Watch later, and settings stay on your computer. No Google login.
+- **Local-first:** subscriptions, watch state, Watch later, and settings stay on your computer. No Google login. The update check contacts GitHub without sending account data.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
 - **Playback speed** from 0.25× to 3.50× in 0.25 steps, with an optional default speed per channel.
 - **Chapters and timestamped bookmarks:** jump to description chapters or save a bookmark at the current second with a personal note.
 - **RSS history grouped by channel:** every video ever seen in a feed is kept once, even after it leaves the current 15-item feed. The history is grouped under each channel and can be filtered by channel or searched.
+- **Update check:** at startup, and then at most every six hours, Expeditus asks GitHub for the latest release, caches the response, and shows a discreet update entry in the sidebar and status bar. The dialog opens the release page or the installer; installation stays manual.
 - **Refresh only one channel** from its page, without waiting for the whole subscription feed.
 - **±10 second seeking** with debounce: several quick presses become one combined jump.
 - **Keyboard-first:** move, open, mark watched, save to Watch later, search, and refresh without touching the mouse.

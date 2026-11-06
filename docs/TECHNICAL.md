@@ -48,6 +48,11 @@ Key modules:
 | `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
 | `lib/src/services/stream_resolver.dart` | Direct media stream resolution |
 | `lib/src/services/sponsorblock_service.dart` | SponsorBlock segment lookup |
+| `lib/src/services/update_feed_client.dart` | GitHub Releases feed, ETag cache, redirect and response limits |
+| `lib/src/services/update_service.dart` | Version comparison and Windows installer selection |
+| `lib/src/models/app_update.dart` | Release and update-check models |
+| `lib/src/ui/update_dialog.dart` | Update center dialog |
+| `lib/src/util/app_version.dart` | Semantic version parsing and comparison |
 | `lib/src/util/seek_accumulator.dart` | Debounced compound seeking |
 | `lib/src/util/chapter_parser.dart` | Timestamped chapter parsing |
 | `lib/src/util/playback_rates.dart` | Shared speed steps |
@@ -116,6 +121,34 @@ The **Guarda più tardi** view is the explicit watch-later list. The `videos.que
 `rssHistory()` lists every video ever received from an RSS feed, ordered by first-seen time. `videos.id` is the primary key, so repeated feed refreshes update the existing row instead of creating duplicates; `first_seen_at` is preserved on conflict. Link-only imports are marked `source = 'link'` and excluded from this view. If a link-only video later appears in the RSS feed, its source is upgraded to `rss`.
 
 The **Storico RSS** view groups these rows by channel with `groupRssHistoryByChannel`. Groups are ordered by the most recent sighting in each channel, while videos keep the first-seen order inside a group. A channel dropdown filters the view; local search combines with that filter. Group headers show the number of matching videos, so counts update when a search is active. The filter is session-only and is cleared automatically if the selected channel no longer has history.
+
+### Update checks
+
+Expeditus reads GitHub's public `releases/latest` endpoint for `kappa77/expeditus`:
+
+```
+https://api.github.com/repos/kappa77/expeditus/releases/latest
+```
+
+The URL can be overridden at build time with `--dart-define=UPDATE_FEED_URL=...`; a read-only token can be supplied with `--dart-define=UPDATE_FEED_TOKEN=...` for private forks. The public release needs no token. A token passed this way is embedded in the binary: use a dedicated read-only token with the minimum scope and rotate it. A generic JSON manifest with `version`, `notes`, `publishedAt`, `releaseUrl`, and `assets[]` is also accepted through the same URL.
+
+The check runs once at startup and then every six hours. Automatic attempts are throttled by `updateLastCheck` (at least six hours apart); opening the dialog also checks when the last attempt is stale, while **Controlla ora** bypasses the throttle and the ETag cache. A failed check never blocks startup and is only surfaced in the update dialog.
+
+The feed is read over HTTPS (plain HTTP is accepted only for localhost during tests), with a 15-second timeout, a 2 MB response limit, at most five redirects, and the `Authorization` header removed when a redirect changes host. The response is cached together with its ETag: a `304 Not Modified` or a network failure reuses the local release and marks the dialog as **dati in cache**.
+
+Versions are parsed as SemVer (`v1.0.9`, `1.0.9+11`, pre-releases); build metadata is ignored. Assets are scored to find the Windows installer (`ExpeditusSetup-*.exe`), ignoring `SHA256SUMS.txt`. The app deliberately does not download or install automatically: the dialog opens the release page or the installer URL in the browser.
+
+Update state is stored in the `settings` table:
+
+| Key | Content |
+|---|---|
+| `updateLastCheck` | Last check attempt, ISO-8601 UTC |
+| `updateSkippedVersion` | Version the user chose to skip |
+| `updateEtag` | ETag for feed revalidation |
+| `updateCachedRelease` | Last valid GitHub release JSON |
+| `updateLastError` | Last failed check, shown in the dialog |
+
+A skipped version stays hidden until a newer release appears. The UI exposes the check from the sidebar (**Aggiornamenti** / **Aggiorna a vX**) and from the clickable version in the status bar; when a release is available both use the accent color. The dialog shows the installed and latest versions, release notes, installer name/size, the last check time, and the cache/error state. The release workflow enables GitHub's generated release notes, so the dialog has a readable body to show.
 
 ### Per-channel refresh
 
@@ -217,7 +250,8 @@ The app footer reads `kAppVersion` from `lib/src/version.dart`, with a developme
 ## Tests
 
 ```powershell
-# Unit tests: RSS, CSV Takeout, resolver, seek accumulator
+# Unit tests: RSS, CSV Takeout, resolver, seek accumulator, migrations,
+# update feed/version/model
 flutter test
 
 # Deterministic desktop E2E: onboarding, import, feed, channel archive/history,
@@ -241,6 +275,8 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - Shorts and live streams are not filtered separately.
 - SSAI can eventually put ads inside direct streams; the current approach is not future-proof.
 - Third-party YouTube clients may be subject to YouTube's Terms of Service.
+- Update checks use GitHub's public Releases API without authentication; the unauthenticated limit is 60 requests per hour per IP. The app checks at most every six hours and reuses ETag responses.
+- The updater only checks and opens the release page or installer URL; it does not download or install silently. Updating remains a manual download-and-run step.
 - The installer is unsigned and the UI is currently in Italian.
 
 ## License

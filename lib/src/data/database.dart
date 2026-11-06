@@ -423,6 +423,11 @@ class AppDatabase {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
+
+  Future<void> deleteSetting(String key) async {
+    final db = await database;
+    await db.delete('settings', where: 'key = ?', whereArgs: [key]);
+  }
 }
 
 /// Creates every table and index at the current schema with IF NOT EXISTS.

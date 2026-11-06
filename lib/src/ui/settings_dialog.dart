@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../version.dart';
 
 class SettingsDialog extends StatelessWidget {
   const SettingsDialog({super.key, required this.state});
@@ -149,7 +150,9 @@ class SettingsDialog extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Text(
                     'La riproduzione dipende da YouTube: se un video non si '
-                    'apre, usa “Apri su YouTube”. Nessun dato lascia il tuo PC.',
+                    'apre, usa “Apri su YouTube”. Iscrizioni e stato restano '
+                    'sul PC; l’app contatta YouTube per i feed e GitHub per '
+                    'controllare le release.',
                     style: TextStyle(
                       color: ExpeditusColors.muted,
                       fontSize: 11,
@@ -163,7 +166,7 @@ class SettingsDialog extends StatelessWidget {
                       onPressed: () => showLicensePage(
                         context: context,
                         applicationName: 'Expeditus',
-                        applicationVersion: '1.0.0',
+                        applicationVersion: kAppVersion,
                         applicationLegalese: 'MIT License',
                       ),
                       icon: const Icon(
