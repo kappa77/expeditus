@@ -19,6 +19,7 @@ One row per channel. The latest video. That is the whole feed.
 - **Import your subscriptions** from Google Takeout, paste channel handles or URLs, or search YouTube by keyword.
 - **Channel page with two tabs:** the recent archive and the channel history, with filters, search, tags, and offline downloads.
 - **Save videos for offline playback:** download a video from its channel page; it appears under **Saved** and plays from local storage.
+- **Separate local MP4 library:** add video files from your computer to **Video locali**. The title comes from the file metadata, or from the file name when the metadata is missing; removing an entry never deletes the file.
 - **RSS mute and feed visibility:** stop new uploads from a channel, and independently choose whether its latest video appears in the **latest/New** list.
 - **Explicit Watch later list:** press `S` on a video to save it; the **Guarda più tardi** view lists saved videos in the order you added them, with the save time.
 - **Add a video from a link:** paste a YouTube video URL to subscribe to its channel automatically and save the video in Watch later.

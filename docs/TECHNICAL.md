@@ -9,6 +9,7 @@ Expeditus is a Flutter desktop application for Windows. It turns a set of YouTub
 - one latest upload per channel;
 - a per-channel archive of recent uploads;
 - local search, status filters, tags, an explicit Watch later list, and watch state;
+- a separate library of local MP4 files, with titles from metadata or the file name;
 - playback through direct media streams instead of the YouTube player;
 - optional SponsorBlock skipping.
 
@@ -46,6 +47,7 @@ Key modules:
 | `lib/src/services/video_chapters_service.dart` | Full-description chapter fetch |
 | `lib/src/services/video_download_service.dart` | Muxed-stream download to the local app data folder |
 | `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
+| `lib/src/services/local_video_service.dart` | MP4 title/duration metadata and file-name fallback |
 | `lib/src/services/stream_resolver.dart` | Direct media stream resolution |
 | `lib/src/services/sponsorblock_service.dart` | SponsorBlock segment lookup |
 | `lib/src/services/dlna/ssdp_discovery.dart` | SSDP MediaRenderer discovery and device-description fetch |
@@ -95,10 +97,11 @@ Tables:
 
 - `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, optional default playback rate, last error.
 - `videos`: id, channel, title, description, publication time, first-seen time, duration, status, watch-later flag, watch-later save time, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
+- `local_videos`: path, title, added time, duration.
 - `bookmarks`: id, video id, position seconds, personal note, creation time.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. All use `ALTER TABLE` migrations.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. Version 8 added the `local_videos` table. All migrations are idempotent.
 
 Migrations are idempotent: tables and indexes are created with `IF NOT EXISTS`, every added column is checked with `PRAGMA table_info` before the `ALTER TABLE`, and backfills only update rows whose value is still `NULL`. An interrupted or partially applied upgrade can therefore be retried safely without "duplicate column name" or "table already exists" errors.
 
@@ -244,6 +247,10 @@ video is cast again. Disconnecting closes the transport and the media server.
 
 The download action in the channel page saves the best **muxed** stream to `downloads/<videoId>.mp4` in the application support directory. Muxed streams are single-file and need no ffmpeg, but YouTube usually limits them to 360p. Downloads are tracked in SQLite; the **Salvati** view lists ready files and the player prefers the local file when present. Removing a download deletes the file and clears the metadata. There is no download queue, resume, or cancellation yet.
 
+### Local MP4 library
+
+The **Video locali** view is separate from subscriptions, downloads, and Watch later. **Aggiungi video** opens a native MP4 picker and stores each path in `local_videos`. The title is read from the MP4 `©nam` atom (or 3GPP `titl`), falling back to the file name without extension when no title is present; the movie header supplies the duration. Metadata parsing is bounded and reads only box headers and metadata payloads, so large files are not loaded into memory. Re-adding a path refreshes its metadata without changing its position, and removing an entry from the list does not delete the file. Local playback uses the same media_kit player but skips YouTube-only features such as SponsorBlock, chapters, watch state, and Watch later.
+
 ### Video links and automatic subscription
 
 The import dialog has a **Link video** tab. It resolves a YouTube watch/short URL with `youtube_explode_dart`, reads the channel ID and video metadata, subscribes to the channel, stores the video, and adds it to Watch later. This works even when the video is older than the channel's current RSS window.
@@ -346,6 +353,7 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - The fallback muxed stream is limited to 360p; HLS is used when available. 1080p/4K would require an optional yt-dlp/ffmpeg resolver.
 - Tags are not available for every video and cost one watch-page request per uncached video.
 - Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
+- Local MP4 files must remain at the path where they were added; the library stores the path, not a copy.
 - RSS history keeps one row per video id; it is not a log of every feed refresh. The current feed view still shows only the latest entry per channel.
 - Chapters depend on timestamps in the description; videos without timestamped descriptions have no chapters. The outline captures the playback position when it is opened for new bookmarks.
 - Channel history records the first time a video was opened or marked watched; toggling watched off does not erase the history entry.

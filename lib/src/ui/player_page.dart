@@ -132,6 +132,10 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _loadChapters() async {
+    if (widget.video.isLocal) {
+      if (mounted) setState(() => _chaptersLoaded = true);
+      return;
+    }
     if (widget.video.chapters.isNotEmpty) {
       if (mounted) {
         setState(() {
@@ -150,6 +154,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _showOutline() async {
+    if (widget.video.isLocal) return;
     if (!_chaptersLoaded) await _loadChapters();
     if (!mounted) return;
     final target = await showDialog<Duration>(
@@ -171,6 +176,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _addBookmark() async {
+    if (widget.video.isLocal) return;
     final note = await showBookmarkNoteDialog(context);
     if (note == null || note.isEmpty) return;
     await widget.state.addBookmark(
@@ -193,10 +199,14 @@ class _PlayerPageState extends State<PlayerPage> {
         final localFile = File(localPath);
         if (await localFile.exists()) {
           mediaUri = Uri.file(localFile.path);
-          quality = 'Offline';
+          quality = widget.video.isLocal ? 'File locale' : 'Offline';
           kind = 'file';
           localPathUsed = localFile.path;
         }
+      }
+
+      if (mediaUri == null && widget.video.isLocal) {
+        throw Exception('File locale non trovato: $localPath');
       }
 
       if (mediaUri == null) {
@@ -226,11 +236,15 @@ class _PlayerPageState extends State<PlayerPage> {
         _castMuted = true;
         if (mounted) setState(() {});
       }
-      await widget.state.markSeen(widget.video);
+      if (!widget.video.isLocal) {
+        await widget.state.markSeen(widget.video);
+      }
       if (widget.state.castController.isConnected) {
         await _startCasting();
       }
-      await _loadSponsorSegments();
+      if (!widget.video.isLocal) {
+        await _loadSponsorSegments();
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = _friendlyError(e));
@@ -239,6 +253,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _loadSponsorSegments() async {
+    if (widget.video.isLocal) return;
     if (!widget.state.sponsorBlockEnabled) return;
     try {
       final segments = await widget.state.sponsorBlock.fetch(
@@ -284,6 +299,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _markWatched() {
+    if (widget.video.isLocal) return;
     if (_watchedSent) return;
     _watchedSent = true;
     unawaited(widget.state.markWatched(widget.video));
@@ -513,6 +529,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _openExternal() async {
+    if (widget.video.isLocal) return;
     await launchUrl(
       Uri.parse(widget.video.url),
       mode: LaunchMode.externalApplication,
@@ -584,20 +601,26 @@ class _PlayerPageState extends State<PlayerPage> {
     if (_error != null) {
       return _PlayerError(
         message: _error!,
+        local: widget.video.isLocal,
         onRetry: _retry,
         onOpenExternal: _openExternal,
       );
     }
     if (!_ready) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(strokeWidth: 2),
-            SizedBox(height: 14),
+            const CircularProgressIndicator(strokeWidth: 2),
+            const SizedBox(height: 14),
             Text(
-              'Risoluzione dello stream…',
-              style: TextStyle(color: ExpeditusColors.muted, fontSize: 12),
+              widget.video.isLocal
+                  ? 'Apertura del file…'
+                  : 'Risoluzione dello stream…',
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -663,18 +686,20 @@ class _PlayerPageState extends State<PlayerPage> {
               color: cast.isConnected ? ExpeditusColors.accent : null,
             ),
           ),
-          IconButton(
-            key: const Key('chapters-button'),
-            tooltip: 'Capitoli e segnalibri',
-            onPressed: _showOutline,
-            icon: const Icon(Icons.format_list_bulleted_rounded),
-          ),
-          IconButton(
-            key: const Key('bookmark-add-button'),
-            tooltip: 'Aggiungi segnalibro con nota',
-            onPressed: _addBookmark,
-            icon: const Icon(Icons.bookmark_add_outlined),
-          ),
+          if (!widget.video.isLocal) ...[
+            IconButton(
+              key: const Key('chapters-button'),
+              tooltip: 'Capitoli e segnalibri',
+              onPressed: _showOutline,
+              icon: const Icon(Icons.format_list_bulleted_rounded),
+            ),
+            IconButton(
+              key: const Key('bookmark-add-button'),
+              tooltip: 'Aggiungi segnalibro con nota',
+              onPressed: _addBookmark,
+              icon: const Icon(Icons.bookmark_add_outlined),
+            ),
+          ],
           PopupMenuButton<double>(
             key: const Key('speed-button'),
             tooltip: 'Velocità di riproduzione',
@@ -708,37 +733,41 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
             ),
           ),
-          IconButton(
-            tooltip: widget.video.isWatched ? 'Segna da vedere' : 'Segna visto',
-            onPressed: () => widget.state.toggleWatched(widget.video),
-            icon: Icon(
-              widget.video.isWatched
-                  ? Icons.check_circle_rounded
-                  : Icons.check_circle_outline_rounded,
-              color: widget.video.isWatched
-                  ? ExpeditusColors.green
-                  : ExpeditusColors.muted,
+          if (!widget.video.isLocal) ...[
+            IconButton(
+              tooltip: widget.video.isWatched
+                  ? 'Segna da vedere'
+                  : 'Segna visto',
+              onPressed: () => widget.state.toggleWatched(widget.video),
+              icon: Icon(
+                widget.video.isWatched
+                    ? Icons.check_circle_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: widget.video.isWatched
+                    ? ExpeditusColors.green
+                    : ExpeditusColors.muted,
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: widget.video.watchLater
-                ? 'Rimuovi da Guarda più tardi'
-                : 'Guarda più tardi',
-            onPressed: () => widget.state.toggleQueued(widget.video),
-            icon: Icon(
-              widget.video.watchLater
-                  ? Icons.watch_later_rounded
-                  : Icons.watch_later_outlined,
-              color: widget.video.watchLater
-                  ? ExpeditusColors.accent
-                  : ExpeditusColors.muted,
+            IconButton(
+              tooltip: widget.video.watchLater
+                  ? 'Rimuovi da Guarda più tardi'
+                  : 'Guarda più tardi',
+              onPressed: () => widget.state.toggleQueued(widget.video),
+              icon: Icon(
+                widget.video.watchLater
+                    ? Icons.watch_later_rounded
+                    : Icons.watch_later_outlined,
+                color: widget.video.watchLater
+                    ? ExpeditusColors.accent
+                    : ExpeditusColors.muted,
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Apri su YouTube (O)',
-            onPressed: _openExternal,
-            icon: const Icon(Icons.open_in_new_rounded),
-          ),
+            IconButton(
+              tooltip: 'Apri su YouTube (O)',
+              onPressed: _openExternal,
+              icon: const Icon(Icons.open_in_new_rounded),
+            ),
+          ],
           const SizedBox(width: 8),
         ],
       ),
@@ -779,11 +808,13 @@ class _PlayerPageState extends State<PlayerPage> {
 class _PlayerError extends StatelessWidget {
   const _PlayerError({
     required this.message,
+    required this.local,
     required this.onRetry,
     required this.onOpenExternal,
   });
 
   final String message;
+  final bool local;
   final VoidCallback onRetry;
   final VoidCallback onOpenExternal;
 
@@ -801,9 +832,12 @@ class _PlayerError extends StatelessWidget {
               color: ExpeditusColors.red,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Stream non disponibile',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            Text(
+              local ? 'File non disponibile' : 'Stream non disponibile',
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -824,12 +858,14 @@ class _PlayerError extends StatelessWidget {
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('Riprova'),
                 ),
-                const SizedBox(width: 10),
-                FilledButton.icon(
-                  onPressed: onOpenExternal,
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  label: const Text('Apri su YouTube'),
-                ),
+                if (!local) ...[
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: onOpenExternal,
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    label: const Text('Apri su YouTube'),
+                  ),
+                ],
               ],
             ),
           ],
@@ -925,7 +961,9 @@ class _PlayerFooter extends StatelessWidget {
                 )
               else if (quality != null)
                 Text(
-                  'Stream diretto · $quality',
+                  video.isLocal
+                      ? 'File locale · MP4'
+                      : 'Stream diretto · $quality',
                   style: const TextStyle(
                     color: ExpeditusColors.muted,
                     fontSize: 10.5,
@@ -1013,69 +1051,73 @@ class _PlayerFooter extends StatelessWidget {
                   icon: const Icon(Icons.forward_10_rounded, size: 20),
                 ),
               ),
-              Expanded(
-                flex: 2,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: sponsorEnabled
-                      ? Text(
-                          sponsorSegments > 0
-                              ? 'SponsorBlock · $sponsorSegments segmenti'
-                              : 'SponsorBlock attivo',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: sponsorSegments > 0
-                                ? ExpeditusColors.green
-                                : ExpeditusColors.muted,
-                            fontSize: 10.5,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ),
-              Expanded(
-                flex: 1,
-                child: IconButton(
-                  tooltip: video.isWatched ? 'Segna da vedere' : 'Segna visto',
-                  onPressed: onToggleWatched,
-                  icon: Icon(
-                    video.isWatched
-                        ? Icons.check_circle_rounded
-                        : Icons.check_circle_outline_rounded,
-                    color: video.isWatched
-                        ? ExpeditusColors.green
-                        : ExpeditusColors.muted,
-                    size: 18,
+              if (!video.isLocal)
+                Expanded(
+                  flex: 2,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: sponsorEnabled
+                        ? Text(
+                            sponsorSegments > 0
+                                ? 'SponsorBlock · $sponsorSegments segmenti'
+                                : 'SponsorBlock attivo',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: sponsorSegments > 0
+                                  ? ExpeditusColors.green
+                                  : ExpeditusColors.muted,
+                              fontSize: 10.5,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ),
-              ),
-              Expanded(
-                flex: 1,
-                child: IconButton(
-                  tooltip: video.watchLater
-                      ? 'Rimuovi da Guarda più tardi'
-                      : 'Guarda più tardi',
-                  onPressed: onToggleQueued,
-                  icon: Icon(
-                    video.watchLater
-                        ? Icons.watch_later_rounded
-                        : Icons.watch_later_outlined,
-                    color: video.watchLater
-                        ? ExpeditusColors.accent
-                        : ExpeditusColors.muted,
-                    size: 18,
+              if (!video.isLocal) ...[
+                Expanded(
+                  flex: 1,
+                  child: IconButton(
+                    tooltip:
+                        video.isWatched ? 'Segna da vedere' : 'Segna visto',
+                    onPressed: onToggleWatched,
+                    icon: Icon(
+                      video.isWatched
+                          ? Icons.check_circle_rounded
+                          : Icons.check_circle_outline_rounded,
+                      color: video.isWatched
+                          ? ExpeditusColors.green
+                          : ExpeditusColors.muted,
+                      size: 18,
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                flex: 1,
-                child: IconButton(
-                  tooltip: 'Apri su YouTube',
-                  onPressed: onOpenExternal,
-                  icon: const Icon(Icons.open_in_new_rounded, size: 17),
+                Expanded(
+                  flex: 1,
+                  child: IconButton(
+                    tooltip: video.watchLater
+                        ? 'Rimuovi da Guarda più tardi'
+                        : 'Guarda più tardi',
+                    onPressed: onToggleQueued,
+                    icon: Icon(
+                      video.watchLater
+                          ? Icons.watch_later_rounded
+                          : Icons.watch_later_outlined,
+                      color: video.watchLater
+                          ? ExpeditusColors.accent
+                          : ExpeditusColors.muted,
+                      size: 18,
+                    ),
+                  ),
                 ),
-              ),
+                Expanded(
+                  flex: 1,
+                  child: IconButton(
+                    tooltip: 'Apri su YouTube',
+                    onPressed: onOpenExternal,
+                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
+                  ),
+                ),
+              ],
             ],
           ),
         ],
