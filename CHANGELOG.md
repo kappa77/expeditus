@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.2
+
+Pipeline di release senza job di test.
+
+### Removed
+
+- Rimosso il job `test` (`flutter analyze` + `flutter test`) dalla pipeline di
+  release: il build dell'APK Android non dipende più dai test.
+
 ## 2.3.1
 
 Sidebar responsive per Android e test visivi.

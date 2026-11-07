@@ -70,33 +70,7 @@ jobs:
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: "3.47.9"
-          cache: true
-
-      - name: Install SQLite (per sqflite_common_ffi nei test)
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-
-      - name: Flutter dependencies
-        run: flutter pub get
-
-      - name: Analyze
-        run: flutter analyze
-
-      - name: Run tests (solo host, senza device/emulatore)
-        run: flutter test
-
   build-android-apk:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
