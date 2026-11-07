@@ -49,3 +49,7 @@ app.*.map.json
 
 # Installer output
 /dist/
+
+# Visual test artifacts
+/screenshots/
+/test/failures/

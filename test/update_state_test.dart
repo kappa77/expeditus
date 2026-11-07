@@ -56,7 +56,9 @@ UpdateCheckResult _newerResult() {
     release: release,
     isNewer: true,
     asset: release!.assetForWindows(),
-    checkedAt: DateTime(2026, 11, 6, 12),
+    // checkedAt deve essere recente, altrimenti il test sul rate-limit
+    // delle 6 ore diventa dipendente dall'orologio della macchina.
+    checkedAt: DateTime.now(),
     etag: '"release-1"',
     rawBody: jsonEncode(json),
   );

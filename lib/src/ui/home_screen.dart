@@ -66,10 +66,13 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
 
+        final compact = MediaQuery.sizeOf(context).shortestSide < 600;
+
         return Scaffold(
           body: Row(
             children: [
               _Sidebar(
+                compact: compact,
                 state: state,
                 onOpenImport: () => _openImport(),
                 onSearchChannel: () => _openImport(initialTab: 2),
@@ -82,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     _Header(
+                      compact: compact,
                       state: state,
                       searchController: _searchController,
                       searchFocus: _searchFocus,
@@ -110,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                     ),
                     _StatusBar(
+                      compact: compact,
                       state: state,
                       onOpenUpdates: _openUpdates,
                     ),
@@ -354,6 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
+    required this.compact,
     required this.state,
     required this.onOpenImport,
     required this.onSearchChannel,
@@ -362,6 +368,7 @@ class _Sidebar extends StatelessWidget {
     required this.onSelect,
   });
 
+  final bool compact;
   final AppState state;
   final VoidCallback onOpenImport;
   final VoidCallback onSearchChannel;
@@ -371,170 +378,229 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final navItems = <Widget>[
+      _NavItem(
+        key: const Key('nav-latest'),
+        label: 'Ultimi',
+        icon: Icons.bolt_rounded,
+        count: state.latestCount,
+        selected: state.view == 'latest',
+        compact: compact,
+        onTap: () => onSelect('latest'),
+      ),
+      _NavItem(
+        key: const Key('nav-new'),
+        label: 'Nuovi',
+        icon: Icons.fiber_new_rounded,
+        count: state.newCount,
+        selected: state.view == 'new',
+        compact: compact,
+        onTap: () => onSelect('new'),
+      ),
+      KeyedSubtree(
+        key: const Key('nav-watch-later'),
+        child: _NavItem(
+          key: const Key('nav-queue'),
+          label: 'Guarda più tardi',
+          icon: state.view == 'queue'
+              ? Icons.watch_later_rounded
+              : Icons.watch_later_outlined,
+          count: state.watchLaterCount,
+          selected: state.view == 'queue',
+          compact: compact,
+          onTap: () => onSelect('queue'),
+        ),
+      ),
+      _NavItem(
+        key: const Key('nav-saved'),
+        label: 'Salvati',
+        icon: Icons.download_done_rounded,
+        count: state.savedCount,
+        selected: state.view == 'saved',
+        compact: compact,
+        onTap: () => onSelect('saved'),
+      ),
+      _NavItem(
+        key: const Key('nav-local'),
+        label: 'Video locali',
+        icon: Icons.video_file_outlined,
+        count: state.localCount,
+        selected: state.view == 'local',
+        compact: compact,
+        onTap: () => onSelect('local'),
+      ),
+      _NavItem(
+        key: const Key('nav-rss-history'),
+        label: 'Storico RSS',
+        icon: Icons.history_rounded,
+        count: state.rssHistoryCount,
+        selected: state.view == 'rss',
+        compact: compact,
+        onTap: () => onSelect('rss'),
+      ),
+      const SizedBox(height: 10),
+      const Divider(),
+      const SizedBox(height: 10),
+      _NavItem(
+        key: const Key('nav-channels'),
+        label: 'Canali',
+        icon: Icons.subscriptions_outlined,
+        count: state.channels.length,
+        selected: state.view == 'channels',
+        compact: compact,
+        onTap: () => onSelect('channels'),
+      ),
+      _NavItem(
+        key: const Key('nav-import'),
+        label: 'Importa',
+        icon: Icons.add_circle_outline_rounded,
+        compact: compact,
+        onTap: onOpenImport,
+      ),
+      _NavItem(
+        key: const Key('nav-channel-search'),
+        label: 'Cerca canale',
+        icon: Icons.person_search_rounded,
+        compact: compact,
+        onTap: onSearchChannel,
+      ),
+    ];
+
     return Container(
-      width: 224,
+      width: compact ? 64 : 224,
       color: ExpeditusColors.surface,
-      padding: const EdgeInsets.fromLTRB(14, 22, 14, 14),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 10 : 14,
+        22,
+        compact ? 10 : 14,
+        14,
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: compact
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: ExpeditusColors.accent,
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  child: const Icon(
-                    Icons.inbox_rounded,
-                    size: 17,
-                    color: ExpeditusColors.background,
-                  ),
-                ),
-                const SizedBox(width: 9),
-                const Text(
-                  'EXPEDITUS',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _SidebarLogo(compact: compact),
           const SizedBox(height: 28),
           Expanded(
             child: SingleChildScrollView(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _NavItem(
-                    key: const Key('nav-latest'),
-                    label: 'Ultimi',
-                    icon: Icons.bolt_rounded,
-                    count: state.latestCount,
-                    selected: state.view == 'latest',
-                    onTap: () => onSelect('latest'),
-                  ),
-                  _NavItem(
-                    key: const Key('nav-new'),
-                    label: 'Nuovi',
-                    icon: Icons.fiber_new_rounded,
-                    count: state.newCount,
-                    selected: state.view == 'new',
-                    onTap: () => onSelect('new'),
-                  ),
-                  KeyedSubtree(
-                    key: const Key('nav-watch-later'),
-                    child: _NavItem(
-                      key: const Key('nav-queue'),
-                      label: 'Guarda più tardi',
-                      icon: state.view == 'queue'
-                          ? Icons.watch_later_rounded
-                          : Icons.watch_later_outlined,
-                      count: state.watchLaterCount,
-                      selected: state.view == 'queue',
-                      onTap: () => onSelect('queue'),
-                    ),
-                  ),
-                  _NavItem(
-                    key: const Key('nav-saved'),
-                    label: 'Salvati',
-                    icon: Icons.download_done_rounded,
-                    count: state.savedCount,
-                    selected: state.view == 'saved',
-                    onTap: () => onSelect('saved'),
-                  ),
-                  _NavItem(
-                    key: const Key('nav-local'),
-                    label: 'Video locali',
-                    icon: Icons.video_file_outlined,
-                    count: state.localCount,
-                    selected: state.view == 'local',
-                    onTap: () => onSelect('local'),
-                  ),
-                  _NavItem(
-                    key: const Key('nav-rss-history'),
-                    label: 'Storico RSS',
-                    icon: Icons.history_rounded,
-                    count: state.rssHistoryCount,
-                    selected: state.view == 'rss',
-                    onTap: () => onSelect('rss'),
-                  ),
-                  const SizedBox(height: 10),
-                  const Divider(),
-                  const SizedBox(height: 10),
-                  _NavItem(
-                    key: const Key('nav-channels'),
-                    label: 'Canali',
-                    icon: Icons.subscriptions_outlined,
-                    count: state.channels.length,
-                    selected: state.view == 'channels',
-                    onTap: () => onSelect('channels'),
-                  ),
-                  _NavItem(
-                    key: const Key('nav-import'),
-                    label: 'Importa',
-                    icon: Icons.add_circle_outline_rounded,
-                    onTap: onOpenImport,
-                  ),
-                  _NavItem(
-                    key: const Key('nav-channel-search'),
-                    label: 'Cerca canale',
-                    icon: Icons.person_search_rounded,
-                    onTap: onSearchChannel,
-                  ),
-                ],
+                crossAxisAlignment: compact
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.stretch,
+                children: navItems,
               ),
             ),
           ),
-          TextButton.icon(
-            key: const Key('nav-updates'),
-            onPressed: onOpenUpdates,
-            icon: Icon(
-              state.hasUpdate
-                  ? Icons.system_update_alt_rounded
-                  : Icons.system_update_alt_outlined,
-              size: 18,
-              color: state.hasUpdate ? ExpeditusColors.accent : null,
-            ),
-            label: Text(
-              state.hasUpdate && state.latestRelease != null
+          if (compact) ...[
+            _NavItem(
+              key: const Key('nav-updates'),
+              label: state.hasUpdate && state.latestRelease != null
                   ? 'Aggiorna a v${state.latestRelease!.version.canonical}'
                   : 'Aggiornamenti',
+              icon: state.hasUpdate
+                  ? Icons.system_update_alt_rounded
+                  : Icons.system_update_alt_outlined,
+              selected: state.hasUpdate,
+              compact: true,
+              onTap: onOpenUpdates,
             ),
-            style: TextButton.styleFrom(
-              alignment: Alignment.centerLeft,
-              foregroundColor: state.hasUpdate
-                  ? ExpeditusColors.accent
-                  : ExpeditusColors.muted,
+            _NavItem(
+              key: const Key('settings-button'),
+              label: 'Impostazioni',
+              icon: Icons.tune_rounded,
+              compact: true,
+              onTap: onOpenSettings,
             ),
-          ),
-          TextButton.icon(
-            key: const Key('settings-button'),
-            onPressed: onOpenSettings,
-            icon: const Icon(Icons.tune_rounded, size: 18),
-            label: const Text('Impostazioni'),
-            style: TextButton.styleFrom(
-              alignment: Alignment.centerLeft,
-              foregroundColor: ExpeditusColors.muted,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              'Solo ciò che hai scelto.\nNessuna raccomandazione.',
-              style: TextStyle(
-                color: ExpeditusColors.muted.withValues(alpha: 0.7),
-                fontSize: 10.5,
-                height: 1.5,
+          ] else ...[
+            TextButton.icon(
+              key: const Key('nav-updates'),
+              onPressed: onOpenUpdates,
+              icon: Icon(
+                state.hasUpdate
+                    ? Icons.system_update_alt_rounded
+                    : Icons.system_update_alt_outlined,
+                size: 18,
+                color: state.hasUpdate ? ExpeditusColors.accent : null,
               ),
+              label: Text(
+                state.hasUpdate && state.latestRelease != null
+                    ? 'Aggiorna a v${state.latestRelease!.version.canonical}'
+                    : 'Aggiornamenti',
+              ),
+              style: TextButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                foregroundColor: state.hasUpdate
+                    ? ExpeditusColors.accent
+                    : ExpeditusColors.muted,
+              ),
+            ),
+            TextButton.icon(
+              key: const Key('settings-button'),
+              onPressed: onOpenSettings,
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('Impostazioni'),
+              style: TextButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                foregroundColor: ExpeditusColors.muted,
+              ),
+            ),
+          ],
+          if (!compact) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'Solo ciò che hai scelto.\nNessuna raccomandazione.',
+                style: TextStyle(
+                  color: ExpeditusColors.muted.withValues(alpha: 0.7),
+                  fontSize: 10.5,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarLogo extends StatelessWidget {
+  const _SidebarLogo({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final mark = Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: ExpeditusColors.accent,
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: const Icon(
+        Icons.inbox_rounded,
+        size: 17,
+        color: ExpeditusColors.background,
+      ),
+    );
+
+    if (compact) return mark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: [
+          mark,
+          const SizedBox(width: 9),
+          const Text(
+            'EXPEDITUS',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2.2,
             ),
           ),
         ],
@@ -551,6 +617,7 @@ class _NavItem extends StatelessWidget {
     required this.onTap,
     this.count,
     this.selected = false,
+    this.compact = false,
   });
 
   final String label;
@@ -558,9 +625,72 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
   final int? count;
   final bool selected;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(7),
+            child: Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? ExpeditusColors.surfaceAlt : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    icon,
+                    size: 19,
+                    color: selected
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                  ),
+                  if (count != null && count! > 0)
+                    Positioned(
+                      right: -10,
+                      top: -8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? ExpeditusColors.accent
+                              : ExpeditusColors.surfaceAlt,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: ExpeditusColors.border),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            color: selected
+                                ? ExpeditusColors.background
+                                : ExpeditusColors.muted,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: InkWell(
@@ -621,6 +751,7 @@ class _NavItem extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   const _Header({
+    required this.compact,
     required this.state,
     required this.searchController,
     required this.searchFocus,
@@ -632,6 +763,7 @@ class _Header extends StatelessWidget {
     required this.onMarkAllSeen,
   });
 
+  final bool compact;
   final AppState state;
   final TextEditingController searchController;
   final FocusNode searchFocus;
@@ -666,6 +798,93 @@ class _Header extends StatelessWidget {
       'channels' => '${state.channels.length} iscrizioni',
       _ => '${state.latestCount} canali · ${state.newCount} nuovi',
     };
+
+    final search = Focus(
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          onClearSearch();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: TextField(
+        key: const Key('search-field'),
+        controller: searchController,
+        focusNode: searchFocus,
+        onChanged: onSearch,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          hintText: state.view == 'local'
+              ? 'Cerca video locali…'
+              : 'Cerca nelle iscrizioni…',
+          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 36,
+            minHeight: 36,
+          ),
+        ),
+      ),
+    );
+
+    final refreshButton = IconButton(
+      key: const Key('refresh-button'),
+      tooltip: 'Aggiorna (R)',
+      onPressed: state.refreshing ? null : onRefresh,
+      icon: state.refreshing
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.refresh_rounded),
+    );
+
+    final primaryButton = state.view == 'local'
+        ? FilledButton.icon(
+            key: const Key('add-local-video-button'),
+            onPressed: onAddLocalVideos,
+            icon: const Icon(Icons.video_library_outlined, size: 18),
+            label: const Text('Aggiungi video'),
+          )
+        : FilledButton.icon(
+            key: const Key('import-button'),
+            onPressed: onImport,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Importa'),
+          );
+
+    if (compact) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+                if (state.view != 'local') ...[const SizedBox(width: 4), refreshButton],
+                const SizedBox(width: 2),
+                primaryButton,
+              ],
+            ),
+            const SizedBox(height: 8),
+            search,
+          ],
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 20, 16),
@@ -705,66 +924,10 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(width: 4),
           ],
-          SizedBox(
-            width: 260,
-            child: Focus(
-              onKeyEvent: (node, event) {
-                if (event is KeyDownEvent &&
-                    event.logicalKey == LogicalKeyboardKey.escape) {
-                  onClearSearch();
-                  return KeyEventResult.handled;
-                }
-                return KeyEventResult.ignored;
-              },
-              child: TextField(
-                key: const Key('search-field'),
-                controller: searchController,
-                focusNode: searchFocus,
-                onChanged: onSearch,
-                style: const TextStyle(fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: state.view == 'local'
-                      ? 'Cerca video locali…'
-                      : 'Cerca nelle iscrizioni…',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                  prefixIconConstraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (state.view != 'local') ...[
-            const SizedBox(width: 8),
-            IconButton(
-              key: const Key('refresh-button'),
-              tooltip: 'Aggiorna (R)',
-              onPressed: state.refreshing ? null : onRefresh,
-              icon: state.refreshing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded),
-            ),
-          ],
+          SizedBox(width: 260, child: search),
+          if (state.view != 'local') ...[const SizedBox(width: 8), refreshButton],
           const SizedBox(width: 2),
-          if (state.view == 'local')
-            FilledButton.icon(
-              key: const Key('add-local-video-button'),
-              onPressed: onAddLocalVideos,
-              icon: const Icon(Icons.video_library_outlined, size: 18),
-              label: const Text('Aggiungi video'),
-            )
-          else
-            FilledButton.icon(
-              key: const Key('import-button'),
-              onPressed: onImport,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Importa'),
-            ),
+          primaryButton,
         ],
       ),
     );
@@ -1262,8 +1425,13 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.state, required this.onOpenUpdates});
+  const _StatusBar({
+    required this.compact,
+    required this.state,
+    required this.onOpenUpdates,
+  });
 
+  final bool compact;
   final AppState state;
   final VoidCallback onOpenUpdates;
 
@@ -1271,16 +1439,20 @@ class _StatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: ExpeditusColors.border)),
         color: ExpeditusColors.surface,
       ),
       child: Row(
         children: [
-          Text(
-            '${state.channels.length} canali · ${state.newCount} nuovi',
-            style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
+          Flexible(
+            child: Text(
+              '${state.channels.length} canali · ${state.newCount} nuovi',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
+            ),
           ),
           if (state.error != null) ...[
             const SizedBox(width: 12),
@@ -1290,9 +1462,13 @@ class _StatusBar extends StatelessWidget {
               color: ExpeditusColors.red,
             ),
             const SizedBox(width: 4),
-            Text(
-              state.error!,
-              style: const TextStyle(color: ExpeditusColors.red, fontSize: 11),
+            Flexible(
+              child: Text(
+                state.error!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: ExpeditusColors.red, fontSize: 11),
+              ),
             ),
           ],
           const Spacer(),
@@ -1312,14 +1488,16 @@ class _StatusBar extends StatelessWidget {
               'Aggiornato ${relativeTime(state.lastRefresh)}',
               style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
             ),
-          const SizedBox(width: 16),
-          Text(
-            '↑↓ · Invio · M · S',
-            style: TextStyle(
-              color: ExpeditusColors.muted.withValues(alpha: 0.55),
-              fontSize: 10.5,
+          if (!compact) ...[
+            const SizedBox(width: 16),
+            Text(
+              '↑↓ · Invio · M · S',
+              style: TextStyle(
+                color: ExpeditusColors.muted.withValues(alpha: 0.55),
+                fontSize: 10.5,
+              ),
             ),
-          ),
+          ],
           const SizedBox(width: 12),
           Container(
             width: 1,

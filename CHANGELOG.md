@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.3.1
+
+Sidebar responsive per Android e test visivi.
+
+### Added
+
+- La sidebar collassa in un rail di sole icone sugli schermi stretti (telefono
+  in portrait o landscape), lasciando spazio al contenuto.
+- Header e barra di stato adattivi sui telefoni: ricerca a larghezza piena,
+  scorciatoie da tastiera nascoste, testi ellissizzati.
+- Golden test per la sidebar (telefono portrait/landscape e desktop).
+- Screenshot test di integrazione per il dispositivo Android.
+- Il job di release Android esegue `flutter analyze` e `flutter test` (solo
+  test eseguibili senza emulatore o device fisico) prima del build dell'APK.
+
+### Fixed
+
+- Test di rate-limit degli aggiornamenti reso deterministico (niente più
+  dipendenza dall'orologio di sistema).
+
 ## 2.3.0
 
 Android support.

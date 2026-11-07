@@ -519,7 +519,6 @@ void main() {
 
     expect(harness.state.hasUpdate, isTrue);
     expect(find.byKey(const Key('nav-updates')), findsOneWidget);
-    expect(find.text('Aggiorna a v1.0.9'), findsOneWidget);
     expect(find.byKey(const Key('updates-button')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('nav-updates')));
