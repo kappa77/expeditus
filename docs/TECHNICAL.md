@@ -4,7 +4,7 @@ This document contains the implementation, build, packaging, and release details
 
 ## Overview
 
-Expeditus is a Flutter desktop application for Windows. It turns a set of YouTube subscriptions into a text-first inbox:
+Expeditus is a Flutter application for Windows desktop and Android. It turns a set of YouTube subscriptions into a text-first inbox:
 
 - one latest upload per channel;
 - a per-channel archive of recent uploads;
@@ -134,7 +134,9 @@ The **Guarda più tardi** view is the explicit watch-later list. The `videos.que
 
 The **Storico RSS** view groups these rows by channel with `groupRssHistoryByChannel`. Groups are ordered by the most recent sighting in each channel, while videos keep the first-seen order inside a group. A channel dropdown filters the view; local search combines with that filter. Group headers show the number of matching videos, so counts update when a search is active. The filter is session-only and is cleared automatically if the selected channel no longer has history.
 
-### Update checks
+### Update checks (desktop)
+
+Android skips the GitHub update check and hides its UI; Android updates are installed manually or through a store.
 
 Expeditus reads GitHub's public `releases/latest` endpoint for `kappa77/expeditus`:
 
@@ -181,6 +183,8 @@ The channel page has two independent visibility controls:
 `latestPerChannel()` requires both `muted = 0` and `show_in_latest = 1`.
 
 ### DLNA casting
+
+DLNA casting and discovery are available on Windows and Android. On Android the app holds a `WifiManager.MulticastLock` during SSDP discovery and allows cleartext local HTTP for device descriptions and the media proxy. The Windows Firewall/network-profile repair helpers only run on Windows.
 
 The player exposes a cast button. `CastDialog` runs SSDP discovery through
 `SsdpDlnaDiscovery` the first time it is opened; the result is cached in
@@ -279,6 +283,20 @@ flutter run -d windows
 
 `windows/CMakeLists.txt` forces `CMAKE_INSTALL_PREFIX` next to the executable. Without it, some Visual Studio/CMake combinations try to install into `C:/Program Files/expeditus` and require administrator rights.
 
+## Build from source (Android)
+
+Requirements: Flutter 3.47.7 or a compatible stable SDK and the Android SDK. The generated `android/` project uses minSdk/targetSdk from the Flutter defaults.
+
+```bash
+flutter pub get
+flutter build apk --debug
+flutter run -d <android-device>
+```
+
+The main manifest declares `INTERNET`, the data-sync foreground-service permissions, and `POST_NOTIFICATIONS`. `DownloadKeepAlive` starts `DownloadService` while a video download runs; the service keeps the process alive and shows a low-priority notification. A download that does not survive process death is reset to `none` on the next launch.
+
+The Android build hides Windows-only update entries. It uses the adaptive icon and dark launch background under `android/app/src/main/res`. Release APKs need a release signing configuration before distribution.
+
 ## One-click installer
 
 The installer is generated with NSIS 3 (`installer/expeditus.nsi`). It is a single self-contained `.exe`:
@@ -362,7 +380,7 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 - Third-party YouTube clients may be subject to YouTube's Terms of Service.
 - Update checks use GitHub's public Releases API without authentication; the unauthenticated limit is 60 requests per hour per IP. The app checks at most every six hours and reuses ETag responses.
 - The updater only checks and opens the release page or installer URL; it does not download or install silently. Updating remains a manual download-and-run step.
-- DLNA casting requires the TV and PC on the same local network. Windows
+- DLNA casting requires the TV and the PC/phone on the same local network. Windows
   Firewall must allow inbound connections to the Expeditus executable; the
   app can add that rule after a UAC confirmation. If the network profile is
   Public and the rule is not granted, the renderer cannot fetch the proxied

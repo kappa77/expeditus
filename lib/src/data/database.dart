@@ -394,6 +394,17 @@ class AppDatabase {
     );
   }
 
+  /// A download cannot survive process death. Clear stale "downloading"
+  /// flags on startup so the UI offers the download again.
+  Future<void> resetStaleDownloads() async {
+    final db = await database;
+    await db.update(
+      'videos',
+      {'download_status': 'none'},
+      where: "download_status = 'downloading'",
+    );
+  }
+
   /// The separate local MP4 library, newest addition first.
   Future<List<LocalVideo>> localVideos() async {
     final db = await database;

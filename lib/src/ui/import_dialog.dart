@@ -64,128 +64,153 @@ class _ImportDialogState extends State<ImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    final maxHeight = MediaQuery.sizeOf(context).height - 48;
+    final media = MediaQuery.sizeOf(context);
+    final compact = media.width < 600 || media.height < 480;
+    final maxHeight = media.height - (compact ? 0 : 48);
+    final content = _buildContent(context, compact: compact);
+
+    if (compact) {
+      return Dialog.fullscreen(
+        key: const Key('import-dialog'),
+        backgroundColor: ExpeditusColors.surface,
+        child: SafeArea(child: content),
+      );
+    }
+
     return Dialog(
       key: const Key('import-dialog'),
       backgroundColor: ExpeditusColors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: 640, maxHeight: maxHeight),
-        child: ListenableBuilder(
-          listenable: widget.state,
-          builder: (context, _) {
-            final busy = widget.state.importing;
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Importa iscrizioni',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: busy
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Non serve accedere a Google. Takeout è il modo più pulito: '
-                    'Scarica i dati → YouTube → subscriptions.csv.',
-                    style: TextStyle(
-                      color: ExpeditusColors.muted,
-                      fontSize: 12.5,
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TabBar(
-                    controller: _tabs,
-                    labelColor: ExpeditusColors.accent,
-                    unselectedLabelColor: ExpeditusColors.muted,
-                    indicatorColor: ExpeditusColors.accent,
-                    tabs: const [
-                      Tab(text: 'File Takeout'),
-                      Tab(text: 'Incolla canali'),
-                      Tab(text: 'Cerca canale'),
-                      Tab(text: 'Link video'),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Flexible(
-                    child: SizedBox(
-                      height: 360,
-                      child: TabBarView(
-                        controller: _tabs,
-                        children: [
-                          _CsvTab(busy: busy, onPick: _pickCsv),
-                          _PasteTab(
-                            busy: busy,
-                            controller: _paste,
-                            onSubmit: _pasteImport,
-                          ),
-                          ChannelSearchTab(state: widget.state),
-                          VideoLinkTab(state: widget.state),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (busy) ...[
-                    const SizedBox(height: 10),
-                    const LinearProgressIndicator(minHeight: 2),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.state.importStatus ?? 'Importazione…',
-                      style: const TextStyle(
-                        color: ExpeditusColors.muted,
-                        fontSize: 11.5,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.lock_outline_rounded,
-                        size: 13,
-                        color: ExpeditusColors.muted,
-                      ),
-                      const SizedBox(width: 5),
-                      const Expanded(
-                        child: Text(
-                          'Nessun login. La ricerca canali interroga YouTube.',
-                          style: TextStyle(
-                            color: ExpeditusColors.muted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: busy
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                        child: const Text('Chiudi'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
+        child: SizedBox(
+          height: maxHeight > 620 ? 620 : maxHeight,
+          child: content,
         ),
       ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, {required bool compact}) {
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        final busy = widget.state.importing;
+        return PopScope(
+          canPop: !busy,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              compact ? 18 : 22,
+              compact ? 14 : 20,
+              compact ? 18 : 22,
+              12,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.max,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Importa iscrizioni',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Chiudi',
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Non serve accedere a Google. Takeout è il modo più pulito: '
+                  'Scarica i dati → YouTube → subscriptions.csv.',
+                  style: TextStyle(
+                    color: ExpeditusColors.muted,
+                    fontSize: 12.5,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TabBar(
+                  controller: _tabs,
+                  labelColor: ExpeditusColors.accent,
+                  unselectedLabelColor: ExpeditusColors.muted,
+                  indicatorColor: ExpeditusColors.accent,
+                  tabs: const [
+                    Tab(text: 'Takeout'),
+                    Tab(text: 'Incolla'),
+                    Tab(text: 'Cerca'),
+                    Tab(text: 'Link'),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabs,
+                    children: [
+                      _CsvTab(busy: busy, onPick: _pickCsv),
+                      _PasteTab(
+                        busy: busy,
+                        controller: _paste,
+                        onSubmit: _pasteImport,
+                      ),
+                      ChannelSearchTab(state: widget.state),
+                      VideoLinkTab(state: widget.state),
+                    ],
+                  ),
+                ),
+                if (busy) ...[
+                  const SizedBox(height: 10),
+                  const LinearProgressIndicator(minHeight: 2),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.state.importStatus ?? 'Importazione…',
+                    style: const TextStyle(
+                      color: ExpeditusColors.muted,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 13,
+                      color: ExpeditusColors.muted,
+                    ),
+                    const SizedBox(width: 5),
+                    const Expanded(
+                      child: Text(
+                        'Nessun login. La ricerca canali interroga YouTube.',
+                        style: TextStyle(
+                          color: ExpeditusColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      child: const Text('Chiudi'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -251,10 +276,7 @@ class _PasteTab extends StatelessWidget {
       children: [
         const Text(
           'Un canale per riga: handle, URL o ID.',
-          style: TextStyle(
-            color: ExpeditusColors.muted,
-            fontSize: 12,
-          ),
+          style: TextStyle(color: ExpeditusColors.muted, fontSize: 12),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -267,7 +289,8 @@ class _PasteTab extends StatelessWidget {
             textAlignVertical: TextAlignVertical.top,
             style: const TextStyle(fontSize: 12.5, height: 1.5),
             decoration: const InputDecoration(
-              hintText: '@mkbhd\n@veritasium\n'
+              hintText:
+                  '@mkbhd\n@veritasium\n'
                   'https://www.youtube.com/@3blue1brown\n'
                   'UCBJycsmduvYEL83R_U4JriQ',
             ),

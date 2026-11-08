@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/app_update.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../util/platform.dart';
 import '../util/format.dart';
 
 Future<void> showUpdateDialog(BuildContext context, AppState state) {
@@ -54,7 +55,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
           builder: (context, _) {
             final state = widget.state;
             final release = state.latestRelease;
-            final asset = release?.assetForWindows();
+            final asset = usesWindowsInstaller
+                ? release?.assetForWindows()
+                : null;
             final skipped = state.updateSkipped;
 
             return SingleChildScrollView(
@@ -180,9 +183,11 @@ class _UpdateDialogState extends State<UpdateDialog> {
                       ),
                     ],
                     const SizedBox(height: 6),
-                    const Text(
-                      'Dopo il download, chiudi Expeditus e avvia l’installer.',
-                      style: TextStyle(
+                    Text(
+                      asset != null
+                          ? 'Dopo il download, chiudi Expeditus e avvia l’installer.'
+                          : 'Apri la pagina della release per scaricare la versione più recente.',
+                      style: const TextStyle(
                         color: ExpeditusColors.muted,
                         fontSize: 10.5,
                         height: 1.4,

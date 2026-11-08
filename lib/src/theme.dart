@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'util/platform.dart';
+
 /// A small, warm palette for a deliberately quiet app.
 abstract final class ExpeditusColors {
   static const background = Color(0xFF0D0F12);
@@ -33,14 +35,52 @@ ThemeData expeditusTheme() {
     colorScheme: scheme,
     scaffoldBackgroundColor: ExpeditusColors.background,
     useMaterial3: true,
-    fontFamily: 'Segoe UI',
+    fontFamily: isMobilePlatform ? 'Roboto' : 'Segoe UI',
     fontFamilyFallback: const ['Inter', 'SF Pro Text', 'Roboto', 'sans-serif'],
+    materialTapTargetSize: MaterialTapTargetSize.padded,
   );
 
   return base.copyWith(
     textTheme: base.textTheme.apply(
       bodyColor: ExpeditusColors.text,
       displayColor: ExpeditusColors.text,
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: ExpeditusColors.background,
+      foregroundColor: ExpeditusColors.text,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        color: ExpeditusColors.text,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: ExpeditusColors.surface,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: ExpeditusColors.accentSoft,
+      height: 64,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const IconThemeData(color: ExpeditusColors.accent, size: 23);
+        }
+        return const IconThemeData(color: ExpeditusColors.muted, size: 23);
+      }),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        return TextStyle(
+          fontSize: 11,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w600
+              : FontWeight.w400,
+          color: states.contains(WidgetState.selected)
+              ? ExpeditusColors.accent
+              : ExpeditusColors.muted,
+        );
+      }),
     ),
     dividerTheme: const DividerThemeData(
       color: ExpeditusColors.border,
@@ -54,37 +94,69 @@ ThemeData expeditusTheme() {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: ExpeditusColors.border),
       ),
-      textStyle: const TextStyle(
-        color: ExpeditusColors.text,
-        fontSize: 12,
-      ),
+      textStyle: const TextStyle(color: ExpeditusColors.text, fontSize: 12),
     ),
     snackBarTheme: const SnackBarThemeData(
       backgroundColor: ExpeditusColors.surfaceAlt,
       contentTextStyle: TextStyle(color: ExpeditusColors.text),
       behavior: SnackBarBehavior.floating,
     ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: ExpeditusColors.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: ExpeditusColors.surface,
+      surfaceTintColor: Colors.transparent,
+      showDragHandle: true,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: ExpeditusColors.surfaceAlt,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: ExpeditusColors.border),
+      ),
+      textStyle: const TextStyle(color: ExpeditusColors.text, fontSize: 13.5),
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: ExpeditusColors.accent,
         foregroundColor: ExpeditusColors.background,
+        minimumSize: const Size(48, 46),
         textStyle: const TextStyle(fontWeight: FontWeight.w600),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: ExpeditusColors.accent,
+        minimumSize: const Size(44, 44),
       ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(48, 46),
+        side: const BorderSide(color: ExpeditusColors.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    ),
+    sliderTheme: const SliderThemeData(
+      activeTrackColor: ExpeditusColors.accent,
+      inactiveTrackColor: ExpeditusColors.border,
+      thumbColor: ExpeditusColors.accent,
+      overlayColor: ExpeditusColors.accentSoft,
+      trackHeight: 2,
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: ExpeditusColors.surface,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      constraints: const BoxConstraints(minHeight: 48),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       hintStyle: const TextStyle(color: ExpeditusColors.muted, fontSize: 13),
+      suffixIconColor: ExpeditusColors.muted,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: ExpeditusColors.border),

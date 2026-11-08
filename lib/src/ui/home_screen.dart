@@ -8,6 +8,7 @@ import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/platform.dart';
 import '../util/rss_grouping.dart';
 import 'channel_page.dart';
 import 'channels_view.dart';
@@ -34,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _searchFocus = FocusNode(debugLabel: 'search');
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   static const double _rowHeight = 112;
 
@@ -65,67 +67,304 @@ class _HomeScreenState extends State<HomeScreen> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
-        final compact = MediaQuery.sizeOf(context).shortestSide < 600;
-
-        return Scaffold(
-          body: Row(
-            children: [
-              _Sidebar(
-                compact: compact,
-                state: state,
-                onOpenImport: () => _openImport(),
-                onSearchChannel: () => _openImport(initialTab: 2),
-                onOpenSettings: _openSettings,
-                onOpenUpdates: _openUpdates,
-                onSelect: _selectView,
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: Column(
-                  children: [
-                    _Header(
-                      compact: compact,
-                      state: state,
-                      searchController: _searchController,
-                      searchFocus: _searchFocus,
-                      onSearch: state.setSearch,
-                      onClearSearch: _clearSearch,
-                      onRefresh: () => state.refresh(force: true),
-                      onImport: () => _openImport(),
-                      onAddLocalVideos: _addLocalVideos,
-                      onMarkAllSeen: state.markAllSeen,
-                    ),
-                    Expanded(
-                      child: state.view == 'channels'
-                          ? ChannelsView(
-                              state: state,
-                              onOpenChannel: _openChannelById,
-                            )
-                          : _FeedView(
-                              state: state,
-                              listFocus: _listFocus,
-                              scrollController: _scrollController,
-                              onSelect: _ensureListFocus,
-                              onPlay: _play,
-                              onKey: _onKey,
-                              onChannelTap: _openChannelById,
-                              onAddLocalVideos: _addLocalVideos,
-                            ),
-                    ),
-                    _StatusBar(
-                      compact: compact,
-                      state: state,
-                      onOpenUpdates: _openUpdates,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
+        if (isCompactWidth(context)) return _buildCompact(context, state);
+        return _buildDesktop(context, state);
       },
     );
+  }
+
+  Widget _buildDesktop(BuildContext context, AppState state) {
+    return Scaffold(
+      body: SafeArea(
+        child: Row(
+          children: [
+            _Sidebar(
+              state: state,
+              width: 224,
+              onOpenImport: () => _openImport(),
+              onSearchChannel: () => _openImport(initialTab: 2),
+              onOpenSettings: _openSettings,
+              onOpenUpdates: _openUpdates,
+              showUpdates: supportsDesktopUpdates,
+              onSelect: _selectView,
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: Column(
+                children: [
+                  _Header(
+                    state: state,
+                    searchController: _searchController,
+                    searchFocus: _searchFocus,
+                    onSearch: state.setSearch,
+                    onClearSearch: _clearSearch,
+                    onRefresh: () => state.refresh(force: true),
+                    onImport: () => _openImport(),
+                    onAddLocalVideos: _addLocalVideos,
+                    onMarkAllSeen: state.markAllSeen,
+                  ),
+                  Expanded(child: _buildView(state, compact: false)),
+                  _StatusBar(
+                    state: state,
+                    onOpenUpdates: _openUpdates,
+                    showUpdates: supportsDesktopUpdates,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompact(BuildContext context, AppState state) {
+    final drawer = Drawer(
+      width: 300,
+      child: SafeArea(
+        child: _Sidebar(
+          state: state,
+          width: 300,
+          onClose: _closeDrawer,
+          onOpenImport: () {
+            _closeDrawer();
+            _openImport();
+          },
+          onSearchChannel: () {
+            _closeDrawer();
+            _openImport(initialTab: 2);
+          },
+          onOpenSettings: () {
+            _closeDrawer();
+            _openSettings();
+          },
+          onOpenUpdates: () {
+            _closeDrawer();
+            _openUpdates();
+          },
+          showUpdates: supportsDesktopUpdates,
+          onSelect: (view) {
+            _closeDrawer();
+            _selectView(view);
+          },
+        ),
+      ),
+    );
+
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: drawer,
+      onDrawerChanged: (open) {
+        if (open) _searchFocus.unfocus();
+      },
+      appBar: _compactAppBar(state),
+      bottomNavigationBar: _CompactNavBar(
+        state: state,
+        onSelect: _selectView,
+        onMore: () => _scaffoldKey.currentState?.openDrawer(),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            if (state.view != 'channels')
+              _CompactSearch(
+                state: state,
+                controller: _searchController,
+                focusNode: _searchFocus,
+                onSearch: state.setSearch,
+                onClear: () {
+                  _searchController.clear();
+                  state.setSearch('');
+                },
+              ),
+            if (state.error != null)
+              _CompactError(message: state.error!, onRefresh: state.refresh),
+            Expanded(child: _buildView(state, compact: true)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  AppBar _compactAppBar(AppState state) {
+    return AppBar(
+      leading: IconButton(
+        key: const Key('open-drawer'),
+        tooltip: 'Apri il menu',
+        icon: const Icon(Icons.menu_rounded),
+        onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+      ),
+      titleSpacing: 0,
+      toolbarHeight: 64,
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _titleForView(state.view),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            _subtitleForView(state),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: ExpeditusColors.muted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        if (state.view != 'local')
+          IconButton(
+            key: const Key('refresh-button'),
+            tooltip: 'Aggiorna',
+            onPressed: state.refreshing
+                ? null
+                : () => state.refresh(force: true),
+            icon: state.refreshing
+                ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        if (state.view == 'local')
+          IconButton(
+            key: const Key('add-local-video-button'),
+            tooltip: 'Aggiungi video',
+            onPressed: _addLocalVideos,
+            icon: const Icon(Icons.video_library_outlined),
+          )
+        else
+          IconButton(
+            key: const Key('import-button'),
+            tooltip: 'Importa',
+            onPressed: () => _openImport(),
+            icon: const Icon(Icons.add_rounded),
+          ),
+        PopupMenuButton<_CompactAction>(
+          key: const Key('compact-menu'),
+          tooltip: 'Altre azioni',
+          onSelected: (action) {
+            switch (action) {
+              case _CompactAction.markSeen:
+                state.markAllSeen();
+              case _CompactAction.local:
+                _selectView('local');
+              case _CompactAction.rss:
+                _selectView('rss');
+              case _CompactAction.searchChannel:
+                _openImport(initialTab: 2);
+              case _CompactAction.importCsv:
+                _openImport();
+              case _CompactAction.settings:
+                _openSettings();
+              case _CompactAction.updates:
+                _openUpdates();
+            }
+          },
+          itemBuilder: (context) => [
+            if (state.newCount > 0 &&
+                !const {'channels', 'rss', 'local'}.contains(state.view))
+              const PopupMenuItem(
+                key: Key('compact-mark-seen'),
+                value: _CompactAction.markSeen,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.done_all_rounded),
+                  title: Text('Segna letti'),
+                ),
+              ),
+            if (state.view != 'local')
+              const PopupMenuItem(
+                value: _CompactAction.local,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.video_file_outlined),
+                  title: Text('Video locali'),
+                ),
+              ),
+            if (state.view != 'rss')
+              const PopupMenuItem(
+                value: _CompactAction.rss,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.history_rounded),
+                  title: Text('Storico RSS'),
+                ),
+              ),
+            const PopupMenuItem(
+              value: _CompactAction.searchChannel,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.person_search_rounded),
+                title: Text('Cerca canale'),
+              ),
+            ),
+            const PopupMenuItem(
+              value: _CompactAction.importCsv,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.file_upload_outlined),
+                title: Text('Importa'),
+              ),
+            ),
+            if (supportsDesktopUpdates)
+              const PopupMenuItem(
+                value: _CompactAction.updates,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.system_update_alt_rounded),
+                  title: Text('Aggiornamenti'),
+                ),
+              ),
+            const PopupMenuItem(
+              value: _CompactAction.settings,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.tune_rounded),
+                title: Text('Impostazioni'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  Widget _buildView(AppState state, {required bool compact}) {
+    if (state.view == 'channels') {
+      return ChannelsView(state: state, onOpenChannel: _openChannelById);
+    }
+    return _FeedView(
+      state: state,
+      listFocus: _listFocus,
+      scrollController: _scrollController,
+      compact: compact,
+      onSelect: _ensureListFocus,
+      onPlay: _play,
+      onKey: _onKey,
+      onChannelTap: _openChannelById,
+      onAddLocalVideos: _addLocalVideos,
+      onRefresh: () => state.refresh(force: true),
+    );
+  }
+
+  void _closeDrawer() {
+    _scaffoldKey.currentState?.closeDrawer();
   }
 
   void _ensureListFocus() {
@@ -135,6 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _selectView(String view) {
     widget.state.setView(view);
+    if (mounted && isCompactWidth(context)) _searchFocus.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && view != 'channels') _listFocus.requestFocus();
     });
@@ -151,10 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final result = await showDialog<ImportResult>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => ImportDialog(
-        state: widget.state,
-        initialTab: initialTab,
-      ),
+      builder: (_) => ImportDialog(state: widget.state, initialTab: initialTab),
     );
     if (!mounted) return;
     if (result != null) {
@@ -234,14 +471,17 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+    if (!mounted) return;
+    // The player persists the last position and watched flags. Give the
+    // unawaited dispose write a moment, then reload so the next open resumes
+    // from the saved second instead of the stale feed row.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await widget.state.reload();
     if (mounted) _listFocus.requestFocus();
   }
 
   Future<void> _openExternal(VideoItem video) async {
-    await launchUrl(
-      Uri.parse(video.url),
-      mode: LaunchMode.externalApplication,
-    );
+    await launchUrl(Uri.parse(video.url), mode: LaunchMode.externalApplication);
   }
 
   Future<void> _openChannelById(String channelId) async {
@@ -255,10 +495,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (channel == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChannelPage(
-          channel: channel!,
-          state: widget.state,
-        ),
+        builder: (_) => ChannelPage(channel: channel!, state: widget.state),
       ),
     );
     if (mounted) _listFocus.requestFocus();
@@ -273,14 +510,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = widget.state;
     final key = event.logicalKey;
 
-    if (key == LogicalKeyboardKey.arrowDown ||
-        key == LogicalKeyboardKey.keyJ) {
+    if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.keyJ) {
       state.moveSelection(1);
       _scrollToSelected(state.selected);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowUp ||
-        key == LogicalKeyboardKey.keyK) {
+    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.keyK) {
       state.moveSelection(-1);
       _scrollToSelected(state.selected);
       return KeyEventResult.handled;
@@ -295,8 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (video != null) state.toggleWatched(video);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyS ||
-        key == LogicalKeyboardKey.keyW) {
+    if (key == LogicalKeyboardKey.keyS || key == LogicalKeyboardKey.keyW) {
       final video = state.selectedVideo;
       if (video != null) state.toggleQueued(video);
       return KeyEventResult.handled;
@@ -357,162 +591,203 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+String _titleForView(String view) => switch (view) {
+  'new' => 'Nuovi',
+  'queue' => 'Guarda più tardi',
+  'watch-later' => 'Guarda più tardi',
+  'saved' => 'Salvati',
+  'local' => 'Video locali',
+  'rss' => 'Storico RSS',
+  'channels' => 'Canali',
+  _ => 'Ultimi',
+};
+
+String _subtitleForView(AppState state) => switch (state.view) {
+  'new' => '${state.visible.length} video da vedere',
+  'queue' => '${state.watchLaterCount} video da guardare',
+  'watch-later' => '${state.watchLaterCount} video da guardare',
+  'saved' => '${state.savedCount} video offline',
+  'local' => '${state.localCount} file MP4 $onDeviceLabel',
+  'rss' =>
+    state.rssChannel == null && state.search.trim().isEmpty
+        ? '${state.rssHistoryCount} video visti nel feed'
+        : '${state.visible.length} video · ${state.rssHistoryCount} totali',
+  'channels' => '${state.channels.length} iscrizioni',
+  _ => '${state.latestCount} canali · ${state.newCount} nuovi',
+};
+
+enum _CompactAction {
+  markSeen,
+  local,
+  rss,
+  searchChannel,
+  importCsv,
+  settings,
+  updates,
+}
+
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
-    required this.compact,
     required this.state,
+    required this.width,
     required this.onOpenImport,
     required this.onSearchChannel,
     required this.onOpenSettings,
     required this.onOpenUpdates,
     required this.onSelect,
+    this.onClose,
+    this.showUpdates = true,
   });
 
-  final bool compact;
   final AppState state;
+  final double width;
   final VoidCallback onOpenImport;
   final VoidCallback onSearchChannel;
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenUpdates;
   final ValueChanged<String> onSelect;
+  final VoidCallback? onClose;
+  final bool showUpdates;
 
   @override
   Widget build(BuildContext context) {
-    final navItems = <Widget>[
-      _NavItem(
-        key: const Key('nav-latest'),
-        label: 'Ultimi',
-        icon: Icons.bolt_rounded,
-        count: state.latestCount,
-        selected: state.view == 'latest',
-        compact: compact,
-        onTap: () => onSelect('latest'),
-      ),
-      _NavItem(
-        key: const Key('nav-new'),
-        label: 'Nuovi',
-        icon: Icons.fiber_new_rounded,
-        count: state.newCount,
-        selected: state.view == 'new',
-        compact: compact,
-        onTap: () => onSelect('new'),
-      ),
-      KeyedSubtree(
-        key: const Key('nav-watch-later'),
-        child: _NavItem(
-          key: const Key('nav-queue'),
-          label: 'Guarda più tardi',
-          icon: state.view == 'queue'
-              ? Icons.watch_later_rounded
-              : Icons.watch_later_outlined,
-          count: state.watchLaterCount,
-          selected: state.view == 'queue',
-          compact: compact,
-          onTap: () => onSelect('queue'),
-        ),
-      ),
-      _NavItem(
-        key: const Key('nav-saved'),
-        label: 'Salvati',
-        icon: Icons.download_done_rounded,
-        count: state.savedCount,
-        selected: state.view == 'saved',
-        compact: compact,
-        onTap: () => onSelect('saved'),
-      ),
-      _NavItem(
-        key: const Key('nav-local'),
-        label: 'Video locali',
-        icon: Icons.video_file_outlined,
-        count: state.localCount,
-        selected: state.view == 'local',
-        compact: compact,
-        onTap: () => onSelect('local'),
-      ),
-      _NavItem(
-        key: const Key('nav-rss-history'),
-        label: 'Storico RSS',
-        icon: Icons.history_rounded,
-        count: state.rssHistoryCount,
-        selected: state.view == 'rss',
-        compact: compact,
-        onTap: () => onSelect('rss'),
-      ),
-      const SizedBox(height: 10),
-      const Divider(),
-      const SizedBox(height: 10),
-      _NavItem(
-        key: const Key('nav-channels'),
-        label: 'Canali',
-        icon: Icons.subscriptions_outlined,
-        count: state.channels.length,
-        selected: state.view == 'channels',
-        compact: compact,
-        onTap: () => onSelect('channels'),
-      ),
-      _NavItem(
-        key: const Key('nav-import'),
-        label: 'Importa',
-        icon: Icons.add_circle_outline_rounded,
-        compact: compact,
-        onTap: onOpenImport,
-      ),
-      _NavItem(
-        key: const Key('nav-channel-search'),
-        label: 'Cerca canale',
-        icon: Icons.person_search_rounded,
-        compact: compact,
-        onTap: onSearchChannel,
-      ),
-    ];
-
     return Container(
-      width: compact ? 64 : 224,
+      width: width,
       color: ExpeditusColors.surface,
-      padding: EdgeInsets.fromLTRB(
-        compact ? 10 : 14,
-        22,
-        compact ? 10 : 14,
-        14,
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
       child: Column(
-        crossAxisAlignment: compact
-            ? CrossAxisAlignment.center
-            : CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SidebarLogo(compact: compact),
-          const SizedBox(height: 28),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: ExpeditusColors.accent,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: const Icon(
+                    Icons.inbox_rounded,
+                    size: 17,
+                    color: ExpeditusColors.background,
+                  ),
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'EXPEDITUS',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2.2,
+                    ),
+                  ),
+                ),
+                if (onClose != null)
+                  IconButton(
+                    tooltip: 'Chiudi menu',
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
           Expanded(
             child: SingleChildScrollView(
               child: Column(
-                crossAxisAlignment: compact
-                    ? CrossAxisAlignment.center
-                    : CrossAxisAlignment.stretch,
-                children: navItems,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _NavItem(
+                    key: const Key('nav-latest'),
+                    label: 'Ultimi',
+                    icon: Icons.bolt_rounded,
+                    count: state.latestCount,
+                    selected: state.view == 'latest',
+                    onTap: () => onSelect('latest'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-new'),
+                    label: 'Nuovi',
+                    icon: Icons.fiber_new_rounded,
+                    count: state.newCount,
+                    selected: state.view == 'new',
+                    onTap: () => onSelect('new'),
+                  ),
+                  KeyedSubtree(
+                    key: const Key('nav-watch-later'),
+                    child: _NavItem(
+                      key: const Key('nav-queue'),
+                      label: 'Guarda più tardi',
+                      icon: state.view == 'queue'
+                          ? Icons.watch_later_rounded
+                          : Icons.watch_later_outlined,
+                      count: state.watchLaterCount,
+                      selected: state.view == 'queue',
+                      onTap: () => onSelect('queue'),
+                    ),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-saved'),
+                    label: 'Salvati',
+                    icon: Icons.download_done_rounded,
+                    count: state.savedCount,
+                    selected: state.view == 'saved',
+                    onTap: () => onSelect('saved'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-local'),
+                    label: 'Video locali',
+                    icon: Icons.video_file_outlined,
+                    count: state.localCount,
+                    selected: state.view == 'local',
+                    onTap: () => onSelect('local'),
+                  ),
+                  _NavItem(
+                    key: const Key('nav-rss-history'),
+                    label: 'Storico RSS',
+                    icon: Icons.history_rounded,
+                    count: state.rssHistoryCount,
+                    selected: state.view == 'rss',
+                    onTap: () => onSelect('rss'),
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(),
+                  const SizedBox(height: 10),
+                  _NavItem(
+                    key: const Key('nav-channels'),
+                    label: 'Canali',
+                    icon: Icons.subscriptions_outlined,
+                    count: state.channels.length,
+                    selected: state.view == 'channels',
+                    onTap: () => onSelect('channels'),
+                  ),
+                  // In the compact drawer these two actions live in the
+                  // app bar (import) and its overflow menu (channel search).
+                  if (onClose == null) ...[
+                    _NavItem(
+                      key: const Key('nav-import'),
+                      label: 'Importa',
+                      icon: Icons.add_circle_outline_rounded,
+                      onTap: onOpenImport,
+                    ),
+                    _NavItem(
+                      key: const Key('nav-channel-search'),
+                      label: 'Cerca canale',
+                      icon: Icons.person_search_rounded,
+                      onTap: onSearchChannel,
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
-          if (compact) ...[
-            _NavItem(
-              key: const Key('nav-updates'),
-              label: state.hasUpdate && state.latestRelease != null
-                  ? 'Aggiorna a v${state.latestRelease!.version.canonical}'
-                  : 'Aggiornamenti',
-              icon: state.hasUpdate
-                  ? Icons.system_update_alt_rounded
-                  : Icons.system_update_alt_outlined,
-              selected: state.hasUpdate,
-              compact: true,
-              onTap: onOpenUpdates,
-            ),
-            _NavItem(
-              key: const Key('settings-button'),
-              label: 'Impostazioni',
-              icon: Icons.tune_rounded,
-              compact: true,
-              onTap: onOpenSettings,
-            ),
-          ] else ...[
+          if (showUpdates)
             TextButton.icon(
               key: const Key('nav-updates'),
               onPressed: onOpenUpdates,
@@ -535,72 +810,26 @@ class _Sidebar extends StatelessWidget {
                     : ExpeditusColors.muted,
               ),
             ),
-            TextButton.icon(
-              key: const Key('settings-button'),
-              onPressed: onOpenSettings,
-              icon: const Icon(Icons.tune_rounded, size: 18),
-              label: const Text('Impostazioni'),
-              style: TextButton.styleFrom(
-                alignment: Alignment.centerLeft,
-                foregroundColor: ExpeditusColors.muted,
-              ),
+          TextButton.icon(
+            key: const Key('settings-button'),
+            onPressed: onOpenSettings,
+            icon: const Icon(Icons.tune_rounded, size: 18),
+            label: const Text('Impostazioni'),
+            style: TextButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              foregroundColor: ExpeditusColors.muted,
             ),
-          ],
-          if (!compact) ...[
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Text(
-                'Solo ciò che hai scelto.\nNessuna raccomandazione.',
-                style: TextStyle(
-                  color: ExpeditusColors.muted.withValues(alpha: 0.7),
-                  fontSize: 10.5,
-                  height: 1.5,
-                ),
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              'Solo ciò che hai scelto.\nNessuna raccomandazione.',
+              style: TextStyle(
+                color: ExpeditusColors.muted.withValues(alpha: 0.7),
+                fontSize: 10.5,
+                height: 1.5,
               ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SidebarLogo extends StatelessWidget {
-  const _SidebarLogo({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final mark = Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: ExpeditusColors.accent,
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: const Icon(
-        Icons.inbox_rounded,
-        size: 17,
-        color: ExpeditusColors.background,
-      ),
-    );
-
-    if (compact) return mark;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Row(
-        children: [
-          mark,
-          const SizedBox(width: 9),
-          const Text(
-            'EXPEDITUS',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 2.2,
             ),
           ),
         ],
@@ -617,7 +846,6 @@ class _NavItem extends StatelessWidget {
     required this.onTap,
     this.count,
     this.selected = false,
-    this.compact = false,
   });
 
   final String label;
@@ -625,79 +853,17 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
   final int? count;
   final bool selected;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    if (compact) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(7),
-            child: Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: selected ? ExpeditusColors.surfaceAlt : Colors.transparent,
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(
-                    icon,
-                    size: 19,
-                    color: selected
-                        ? ExpeditusColors.accent
-                        : ExpeditusColors.muted,
-                  ),
-                  if (count != null && count! > 0)
-                    Positioned(
-                      right: -10,
-                      top: -8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? ExpeditusColors.accent
-                              : ExpeditusColors.surfaceAlt,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: ExpeditusColors.border),
-                        ),
-                        child: Text(
-                          '$count',
-                          style: TextStyle(
-                            color: selected
-                                ? ExpeditusColors.background
-                                : ExpeditusColors.muted,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(7),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          constraints: const BoxConstraints(minHeight: 44),
           decoration: BoxDecoration(
             color: selected ? ExpeditusColors.surfaceAlt : Colors.transparent,
             borderRadius: BorderRadius.circular(7),
@@ -706,15 +872,19 @@ class _NavItem extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                size: 17,
-                color: selected ? ExpeditusColors.accent : ExpeditusColors.muted,
+                size: 19,
+                color: selected
+                    ? ExpeditusColors.accent
+                    : ExpeditusColors.muted,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   label,
                   style: TextStyle(
-                    color: selected ? ExpeditusColors.text : ExpeditusColors.textDim,
+                    color: selected
+                        ? ExpeditusColors.text
+                        : ExpeditusColors.textDim,
                     fontSize: 13,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
@@ -722,8 +892,10 @@ class _NavItem extends StatelessWidget {
               ),
               if (count != null && count! > 0)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: selected
                         ? ExpeditusColors.accentSoft
@@ -751,7 +923,6 @@ class _NavItem extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   const _Header({
-    required this.compact,
     required this.state,
     required this.searchController,
     required this.searchFocus,
@@ -763,7 +934,6 @@ class _Header extends StatelessWidget {
     required this.onMarkAllSeen,
   });
 
-  final bool compact;
   final AppState state;
   final TextEditingController searchController;
   final FocusNode searchFocus;
@@ -776,115 +946,8 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = switch (state.view) {
-      'new' => 'Nuovi',
-      'queue' => 'Guarda più tardi',
-      'watch-later' => 'Guarda più tardi',
-      'saved' => 'Salvati',
-      'local' => 'Video locali',
-      'rss' => 'Storico RSS',
-      'channels' => 'Canali',
-      _ => 'Ultimi',
-    };
-    final subtitle = switch (state.view) {
-      'new' => '${state.visible.length} video da vedere',
-      'queue' => '${state.watchLaterCount} video da guardare',
-      'watch-later' => '${state.watchLaterCount} video da guardare',
-      'saved' => '${state.savedCount} video offline',
-      'local' => '${state.localCount} file MP4 sul computer',
-      'rss' => state.rssChannel == null && state.search.trim().isEmpty
-          ? '${state.rssHistoryCount} video visti nel feed'
-          : '${state.visible.length} video · ${state.rssHistoryCount} totali',
-      'channels' => '${state.channels.length} iscrizioni',
-      _ => '${state.latestCount} canali · ${state.newCount} nuovi',
-    };
-
-    final search = Focus(
-      onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          onClearSearch();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
-      child: TextField(
-        key: const Key('search-field'),
-        controller: searchController,
-        focusNode: searchFocus,
-        onChanged: onSearch,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          hintText: state.view == 'local'
-              ? 'Cerca video locali…'
-              : 'Cerca nelle iscrizioni…',
-          prefixIcon: const Icon(Icons.search_rounded, size: 18),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 36,
-            minHeight: 36,
-          ),
-        ),
-      ),
-    );
-
-    final refreshButton = IconButton(
-      key: const Key('refresh-button'),
-      tooltip: 'Aggiorna (R)',
-      onPressed: state.refreshing ? null : onRefresh,
-      icon: state.refreshing
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.refresh_rounded),
-    );
-
-    final primaryButton = state.view == 'local'
-        ? FilledButton.icon(
-            key: const Key('add-local-video-button'),
-            onPressed: onAddLocalVideos,
-            icon: const Icon(Icons.video_library_outlined, size: 18),
-            label: const Text('Aggiungi video'),
-          )
-        : FilledButton.icon(
-            key: const Key('import-button'),
-            onPressed: onImport,
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('Importa'),
-          );
-
-    if (compact) {
-      return Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ),
-                if (state.view != 'local') ...[const SizedBox(width: 4), refreshButton],
-                const SizedBox(width: 2),
-                primaryButton,
-              ],
-            ),
-            const SizedBox(height: 8),
-            search,
-          ],
-        ),
-      );
-    }
+    final title = _titleForView(state.view);
+    final subtitle = _subtitleForView(state);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 20, 16),
@@ -924,10 +987,56 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(width: 4),
           ],
-          SizedBox(width: 260, child: search),
-          if (state.view != 'local') ...[const SizedBox(width: 8), refreshButton],
+          SizedBox(
+            width: 260,
+            child: Focus(
+              onKeyEvent: (node, event) {
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.escape) {
+                  onClearSearch();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: _SearchBar(
+                state: state,
+                controller: searchController,
+                focusNode: searchFocus,
+                onChanged: onSearch,
+                onClear: onClearSearch,
+              ),
+            ),
+          ),
+          if (state.view != 'local') ...[
+            const SizedBox(width: 8),
+            IconButton(
+              key: const Key('refresh-button'),
+              tooltip: 'Aggiorna (R)',
+              onPressed: state.refreshing ? null : onRefresh,
+              icon: state.refreshing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+          ],
           const SizedBox(width: 2),
-          primaryButton,
+          if (state.view == 'local')
+            FilledButton.icon(
+              key: const Key('add-local-video-button'),
+              onPressed: onAddLocalVideos,
+              icon: const Icon(Icons.video_library_outlined, size: 18),
+              label: const Text('Aggiungi video'),
+            )
+          else
+            FilledButton.icon(
+              key: const Key('import-button'),
+              onPressed: onImport,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Importa'),
+            ),
         ],
       ),
     );
@@ -939,21 +1048,25 @@ class _FeedView extends StatelessWidget {
     required this.state,
     required this.listFocus,
     required this.scrollController,
+    required this.compact,
     required this.onSelect,
     required this.onPlay,
     required this.onKey,
     required this.onChannelTap,
     required this.onAddLocalVideos,
+    required this.onRefresh,
   });
 
   final AppState state;
   final FocusNode listFocus;
   final ScrollController scrollController;
+  final bool compact;
   final VoidCallback onSelect;
   final Future<void> Function(VideoItem) onPlay;
   final KeyEventResult Function(FocusNode, KeyEvent) onKey;
   final ValueChanged<String> onChannelTap;
   final VoidCallback onAddLocalVideos;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -961,6 +1074,7 @@ class _FeedView extends StatelessWidget {
     final filter = showFilter
         ? _RssChannelFilter(
             state: state,
+            compact: compact,
             onSelect: (channelId) {
               state.setRssChannel(channelId);
               WidgetsBinding.instance.addPostFrameCallback((_) => onSelect());
@@ -970,18 +1084,26 @@ class _FeedView extends StatelessWidget {
 
     if (state.visible.isEmpty) {
       if (filter == null) {
-        return _EmptyState(
-          state: state,
-          onAddLocalVideos: onAddLocalVideos,
+        return _RefreshableEmpty(
+          onRefresh: onRefresh,
+          child: _EmptyState(
+            state: state,
+            compact: compact,
+            onAddLocalVideos: onAddLocalVideos,
+          ),
         );
       }
       return Column(
         children: [
           filter,
           Expanded(
-            child: _EmptyState(
-              state: state,
-              onAddLocalVideos: onAddLocalVideos,
+            child: _RefreshableEmpty(
+              onRefresh: onRefresh,
+              child: _EmptyState(
+                state: state,
+                compact: compact,
+                onAddLocalVideos: onAddLocalVideos,
+              ),
             ),
           ),
         ],
@@ -993,7 +1115,10 @@ class _FeedView extends StatelessWidget {
       onKeyEvent: onKey,
       child: Scrollbar(
         controller: scrollController,
-        child: state.view == 'rss' ? _buildRssList() : _buildFlatList(),
+        child: RefreshIndicator(
+          onRefresh: onRefresh,
+          child: state.view == 'rss' ? _buildRssList() : _buildFlatList(),
+        ),
       ),
     );
 
@@ -1009,7 +1134,8 @@ class _FeedView extends StatelessWidget {
   Widget _buildFlatList() {
     return ListView.builder(
       controller: scrollController,
-      padding: const EdgeInsets.only(top: 2, bottom: 24),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 2, bottom: 28),
       itemCount: state.visible.length,
       itemBuilder: (context, index) {
         return _videoRow(state.visible[index], index);
@@ -1021,7 +1147,8 @@ class _FeedView extends StatelessWidget {
     final entries = _rssEntries();
     return ListView.builder(
       controller: scrollController,
-      padding: const EdgeInsets.only(top: 2, bottom: 24),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 2, bottom: 28),
       itemCount: entries.length,
       itemBuilder: (context, index) {
         final entry = entries[index];
@@ -1038,27 +1165,22 @@ class _FeedView extends StatelessWidget {
     return VideoRow(
       key: ValueKey(video.id),
       video: video,
+      compact: compact,
       selected: index == state.selected,
       hideDescription: state.hideDescriptions,
       onTap: () {
         state.select(index);
         onSelect();
       },
-      onPlay: () => onPlay(video),
-      onToggleWatched: video.isLocal
-          ? null
-          : () => state.toggleWatched(video),
-      onToggleQueued: video.isLocal
-          ? null
-          : () => state.toggleQueued(video),
-      onChannelTap: video.isLocal
-          ? null
-          : () => onChannelTap(video.channelId),
-      onRemove: video.isLocal
-          ? () => state.removeLocalVideo(video)
-          : null,
-      showWatchLaterDate: state.view == 'queue' ||
-          state.view == 'watch-later',
+      onPlay: () {
+        state.select(index);
+        onPlay(video);
+      },
+      onToggleWatched: video.isLocal ? null : () => state.toggleWatched(video),
+      onToggleQueued: video.isLocal ? null : () => state.toggleQueued(video),
+      onChannelTap: video.isLocal ? null : () => onChannelTap(video.channelId),
+      onRemove: video.isLocal ? () => state.removeLocalVideo(video) : null,
+      showWatchLaterDate: state.view == 'queue' || state.view == 'watch-later',
       showAddedDate: video.isLocal,
     );
   }
@@ -1121,8 +1243,8 @@ class _RssGroupHeader extends StatelessWidget {
     final color = videoChannelColor(entry.channelId);
     return Container(
       key: ValueKey('rss-group-${entry.channelId}'),
-      height: _rssHeaderHeight,
-      padding: const EdgeInsets.fromLTRB(26, 14, 24, 6),
+      constraints: const BoxConstraints(minHeight: _rssHeaderHeight),
+      padding: const EdgeInsets.fromLTRB(26, 14, 24, 8),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: ExpeditusColors.border)),
       ),
@@ -1165,9 +1287,14 @@ class _RssGroupHeader extends StatelessWidget {
 }
 
 class _RssChannelFilter extends StatelessWidget {
-  const _RssChannelFilter({required this.state, required this.onSelect});
+  const _RssChannelFilter({
+    required this.state,
+    required this.compact,
+    required this.onSelect,
+  });
 
   final AppState state;
+  final bool compact;
   final ValueChanged<String?> onSelect;
 
   @override
@@ -1190,122 +1317,116 @@ class _RssChannelFilter extends StatelessWidget {
     final selected = selectedId == null
         ? null
         : items.firstWhere((item) => item.channelId == selectedId);
-    final matching = state.search.trim().isEmpty
-        ? total
-        : state.visible.length;
+    final matching = state.search.trim().isEmpty ? total : state.visible.length;
+
+    final dropdown = DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        key: const Key('rss-channel-filter'),
+        value: selectedId ?? '',
+        isDense: true,
+        isExpanded: true,
+        dropdownColor: ExpeditusColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        style: const TextStyle(color: ExpeditusColors.text, fontSize: 12.5),
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: ExpeditusColors.muted,
+        ),
+        selectedItemBuilder: (context) => [
+          Text(
+            'Tutti i canali ($total)',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          for (final summary in items)
+            Text(
+              _summaryLabel(summary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+        ],
+        items: [
+          DropdownMenuItem<String>(
+            value: '',
+            child: Text(
+              'Tutti i canali ($total)',
+              key: const Key('rss-channel-option-all'),
+            ),
+          ),
+          for (final summary in items)
+            DropdownMenuItem<String>(
+              value: summary.channelId,
+              child: Text(
+                '${_summaryLabel(summary)} (${summary.count})',
+                key: ValueKey('rss-channel-option-${summary.channelId}'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: (value) =>
+            onSelect(value == null || value.isEmpty ? null : value),
+      ),
+    );
 
     return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      constraints: const BoxConstraints(minHeight: 46),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: ExpeditusColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.filter_list_rounded,
-            size: 16,
-            color: ExpeditusColors.muted,
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'Canale',
-            style: TextStyle(color: ExpeditusColors.muted, fontSize: 11.5),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 260,
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                key: const Key('rss-channel-filter'),
-                value: selectedId ?? '',
-                isDense: true,
-                isExpanded: true,
-                dropdownColor: ExpeditusColors.surfaceAlt,
-                borderRadius: BorderRadius.circular(8),
+          if (!compact) ...[
+            const Icon(
+              Icons.filter_list_rounded,
+              size: 16,
+              color: ExpeditusColors.muted,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Canale',
+              style: TextStyle(color: ExpeditusColors.muted, fontSize: 11.5),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(width: 260, child: dropdown),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                selected == null
+                    ? '${summaries.length} canali · $matching video'
+                    : '${state.visible.length} video · ${_summaryLabel(selected)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
                 style: const TextStyle(
-                  color: ExpeditusColors.text,
-                  fontSize: 12.5,
-                ),
-                icon: const Icon(
-                  Icons.expand_more_rounded,
-                  size: 18,
                   color: ExpeditusColors.muted,
-                ),
-                selectedItemBuilder: (context) => [
-                  Text(
-                    'Tutti i canali ($total)',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  for (final summary in items)
-                    Text(
-                      _summaryLabel(summary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-                items: [
-                  DropdownMenuItem<String>(
-                    value: '',
-                    child: Text(
-                      'Tutti i canali ($total)',
-                      key: const Key('rss-channel-option-all'),
-                    ),
-                  ),
-                  for (final summary in items)
-                    DropdownMenuItem<String>(
-                      value: summary.channelId,
-                      child: Text(
-                        '${_summaryLabel(summary)} (${summary.count})',
-                        key: ValueKey(
-                          'rss-channel-option-${summary.channelId}',
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (value) => onSelect(
-                  value == null || value.isEmpty ? null : value,
+                  fontSize: 10.5,
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              selected == null
-                  ? '${summaries.length} canali · $matching video'
-                  : '${state.visible.length} video · ${_summaryLabel(selected)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: ExpeditusColors.muted,
-                fontSize: 10.5,
-              ),
-            ),
-          ),
+          ] else
+            Expanded(child: dropdown),
         ],
       ),
     );
   }
 
   static String _summaryLabel(RssChannelSummary summary) {
-    return summary.title.trim().isEmpty
-        ? summary.channelId
-        : summary.title;
+    return summary.title.trim().isEmpty ? summary.channelId : summary.title;
   }
 }
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
     required this.state,
+    required this.compact,
     required this.onAddLocalVideos,
   });
 
   final AppState state;
+  final bool compact;
   final VoidCallback onAddLocalVideos;
 
   @override
@@ -1316,108 +1437,111 @@ class _EmptyState extends StatelessWidget {
     final title = filtered
         ? 'Nessun risultato'
         : local
-            ? 'Nessun video locale'
-            : noChannels
-                ? 'La tua casella è vuota'
-                : state.view == 'new'
-                    ? 'Sei in pari'
-                    : state.view == 'queue' || state.view == 'watch-later'
-                        ? 'Guarda più tardi è vuoto'
-                        : state.view == 'saved'
-                            ? 'Nessun video salvato'
-                            : 'Nessun video';
+        ? 'Nessun video locale'
+        : noChannels
+        ? 'La tua casella è vuota'
+        : state.view == 'new'
+        ? 'Sei in pari'
+        : state.view == 'queue' || state.view == 'watch-later'
+        ? 'Guarda più tardi è vuoto'
+        : state.view == 'saved'
+        ? 'Nessun video salvato'
+        : 'Nessun video';
     final message = filtered
         ? local
-            ? 'Prova con un altro termine.'
-            : 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
+              ? 'Prova con un altro termine.'
+              : 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
         : local
-            ? 'Aggiungi un file MP4 dal computer. Il titolo viene letto dai metadati del file, oppure dal nome del file.'
-            : noChannels
-                ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
-                : state.view == 'queue' || state.view == 'watch-later'
-                    ? 'Metti un video in Guarda più tardi con il tasto S o con l’icona dell’orologio nella riga del video.'
-                    : state.view == 'saved'
-                        ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
-                        : state.view == 'rss'
-                            ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
-                            : 'Nessun nuovo video dai canali che segui.';
+        ? 'Aggiungi un file MP4 $fromDeviceLabel. Il titolo viene letto dai metadati del file, oppure dal nome del file.'
+        : noChannels
+        ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
+        : state.view == 'queue' || state.view == 'watch-later'
+        ? (compact
+              ? 'Metti un video in Guarda più tardi dal menu della riga (⋮), oppure aprilo e usa l’icona dell’orologio.'
+              : 'Metti un video in Guarda più tardi con il tasto S o con l’icona dell’orologio nella riga del video.')
+        : state.view == 'saved'
+        ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
+        : state.view == 'rss'
+        ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
+        : 'Nessun nuovo video dai canali che segui.';
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 430),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              local
-                  ? Icons.video_file_outlined
-                  : noChannels
-                      ? Icons.inbox_outlined
-                      : Icons.check_circle_outline,
-              size: 42,
-              color: ExpeditusColors.muted.withValues(alpha: 0.7),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                local
+                    ? Icons.video_file_outlined
+                    : noChannels
+                    ? Icons.inbox_outlined
+                    : Icons.check_circle_outline,
+                size: 42,
+                color: ExpeditusColors.muted.withValues(alpha: 0.7),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: ExpeditusColors.muted,
-                fontSize: 13,
-                height: 1.45,
-              ),
-            ),
-            if (local) ...[
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                key: const Key('empty-add-local-button'),
-                onPressed: onAddLocalVideos,
-                icon: const Icon(Icons.video_library_outlined, size: 18),
-                label: const Text('Aggiungi video MP4'),
-              ),
-            ] else if (noChannels) ...[
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                key: const Key('empty-import-button'),
-                onPressed: () async {
-                  final result = await showDialog<ImportResult>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => ImportDialog(state: state),
-                  );
-                  if (result != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${result.added} canali importati.',
-                        ),
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Importa iscrizioni'),
-              ),
-            ],
-            if (!local && !noChannels && !filtered) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 14),
               Text(
-                'R per aggiornare · / per cercare',
-                style: TextStyle(
-                  color: ExpeditusColors.muted.withValues(alpha: 0.6),
-                  fontSize: 11,
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              const SizedBox(height: 6),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: ExpeditusColors.muted,
+                  fontSize: 13,
+                  height: 1.45,
+                ),
+              ),
+              if (local) ...[
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  key: const Key('empty-add-local-button'),
+                  onPressed: onAddLocalVideos,
+                  icon: const Icon(Icons.video_library_outlined, size: 18),
+                  label: const Text('Aggiungi video MP4'),
+                ),
+              ] else if (noChannels) ...[
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  key: const Key('empty-import-button'),
+                  onPressed: () async {
+                    final result = await showDialog<ImportResult>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => ImportDialog(state: state),
+                    );
+                    if (result != null && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${result.added} canali importati.'),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Importa iscrizioni'),
+                ),
+              ],
+              if (!compact && !local && !noChannels && !filtered) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'R per aggiornare · / per cercare',
+                  style: TextStyle(
+                    color: ExpeditusColors.muted.withValues(alpha: 0.6),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1426,33 +1550,29 @@ class _EmptyState extends StatelessWidget {
 
 class _StatusBar extends StatelessWidget {
   const _StatusBar({
-    required this.compact,
     required this.state,
     required this.onOpenUpdates,
+    this.showUpdates = true,
   });
 
-  final bool compact;
   final AppState state;
   final VoidCallback onOpenUpdates;
+  final bool showUpdates;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 34,
-      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
+      constraints: const BoxConstraints(minHeight: 34),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: ExpeditusColors.border)),
         color: ExpeditusColors.surface,
       ),
       child: Row(
         children: [
-          Flexible(
-            child: Text(
-              '${state.channels.length} canali · ${state.newCount} nuovi',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
-            ),
+          Text(
+            '${state.channels.length} canali · ${state.newCount} nuovi',
+            style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
           ),
           if (state.error != null) ...[
             const SizedBox(width: 12),
@@ -1467,7 +1587,10 @@ class _StatusBar extends StatelessWidget {
                 state.error!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: ExpeditusColors.red, fontSize: 11),
+                style: const TextStyle(
+                  color: ExpeditusColors.red,
+                  fontSize: 11,
+                ),
               ),
             ),
           ],
@@ -1486,9 +1609,12 @@ class _StatusBar extends StatelessWidget {
           ] else
             Text(
               'Aggiornato ${relativeTime(state.lastRefresh)}',
-              style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 11,
+              ),
             ),
-          if (!compact) ...[
+          if (!isMobilePlatform) ...[
             const SizedBox(width: 16),
             Text(
               '↑↓ · Invio · M · S',
@@ -1497,72 +1623,314 @@ class _StatusBar extends StatelessWidget {
                 fontSize: 10.5,
               ),
             ),
-          ],
-          const SizedBox(width: 12),
-          Container(
-            width: 1,
-            height: 12,
-            color: ExpeditusColors.border,
-          ),
-          const SizedBox(width: 10),
-          Tooltip(
-            message: state.hasUpdate
-                ? 'Aggiornamento disponibile: v${state.latestRelease!.version.canonical}'
-                : 'Aggiornamenti',
-            child: InkWell(
-              key: const Key('updates-button'),
-              onTap: onOpenUpdates,
-              borderRadius: BorderRadius.circular(5),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (state.updateChecking)
-                      const SizedBox(
-                        width: 10,
-                        height: 10,
-                        child: CircularProgressIndicator(strokeWidth: 1.5),
-                      )
-                    else if (state.hasUpdate)
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: ExpeditusColors.accent,
-                          shape: BoxShape.circle,
+            const SizedBox(width: 12),
+            Container(width: 1, height: 12, color: ExpeditusColors.border),
+            const SizedBox(width: 10),
+          ] else
+            const SizedBox(width: 10),
+          if (showUpdates)
+            Tooltip(
+              message: state.hasUpdate
+                  ? 'Aggiornamento disponibile: v${state.latestRelease!.version.canonical}'
+                  : 'Aggiornamenti',
+              child: InkWell(
+                key: const Key('updates-button'),
+                onTap: onOpenUpdates,
+                borderRadius: BorderRadius.circular(5),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 3,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (state.updateChecking)
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 1.5),
+                        )
+                      else if (state.hasUpdate)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: ExpeditusColors.accent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      if (state.updateChecking || state.hasUpdate)
+                        const SizedBox(width: 6),
+                      Text(
+                        'v${state.currentVersion.canonical}',
+                        key: const Key('app-version'),
+                        style: TextStyle(
+                          color: state.hasUpdate
+                              ? ExpeditusColors.accent
+                              : ExpeditusColors.muted,
+                          fontSize: 10.5,
+                          fontWeight: state.hasUpdate
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
-                    if (state.updateChecking || state.hasUpdate)
-                      const SizedBox(width: 6),
-                    Text(
-                      'v${state.currentVersion.canonical}',
-                      key: const Key('app-version'),
-                      style: TextStyle(
-                        color: state.hasUpdate
-                            ? ExpeditusColors.accent
-                            : ExpeditusColors.muted,
-                        fontSize: 10.5,
-                        fontWeight: state.hasUpdate
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    if (state.hasUpdate) ...[
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.system_update_alt_rounded,
-                        size: 12,
-                        color: ExpeditusColors.accent,
-                      ),
+                      if (state.hasUpdate) ...[
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.system_update_alt_rounded,
+                          size: 12,
+                          color: ExpeditusColors.accent,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({
+    required this.state,
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final AppState state;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        return TextField(
+          key: const Key('search-field'),
+          controller: controller,
+          focusNode: focusNode,
+          onChanged: onChanged,
+          textInputAction: TextInputAction.search,
+          style: const TextStyle(fontSize: 13.5),
+          decoration: InputDecoration(
+            hintText: state.view == 'local'
+                ? 'Cerca video locali…'
+                : 'Cerca nelle iscrizioni…',
+            prefixIcon: const Icon(Icons.search_rounded, size: 19),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 42,
+              minHeight: 48,
+            ),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    key: const Key('search-clear'),
+                    tooltip: 'Cancella ricerca',
+                    onPressed: onClear,
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                  ),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 48,
+              minHeight: 48,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CompactSearch extends StatelessWidget {
+  const _CompactSearch({
+    required this.state,
+    required this.controller,
+    required this.focusNode,
+    required this.onSearch,
+    required this.onClear,
+  });
+
+  final AppState state;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onSearch;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: _SearchBar(
+        state: state,
+        controller: controller,
+        focusNode: focusNode,
+        onChanged: onSearch,
+        onClear: onClear,
+      ),
+    );
+  }
+}
+
+class _CompactError extends StatelessWidget {
+  const _CompactError({required this.message, required this.onRefresh});
+
+  final String message;
+  final Future<void> Function({bool force}) onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+        decoration: BoxDecoration(
+          color: ExpeditusColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: ExpeditusColors.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 17,
+              color: ExpeditusColors.red,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: ExpeditusColors.red,
+                  fontSize: 11.5,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Riprova',
+              onPressed: () => onRefresh(force: true),
+              icon: const Icon(Icons.refresh_rounded, size: 19),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactNavBar extends StatelessWidget {
+  const _CompactNavBar({
+    required this.state,
+    required this.onSelect,
+    required this.onMore,
+  });
+
+  final AppState state;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onMore;
+
+  static int _indexFor(String view) => switch (view) {
+    'latest' => 0,
+    'new' => 1,
+    'queue' || 'watch-later' => 2,
+    'channels' => 3,
+    _ => 4,
+  };
+
+  static Widget _counted(IconData icon, int count) {
+    return Badge.count(
+      count: count,
+      isLabelVisible: count > 0,
+      child: Icon(icon),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NavigationBar(
+      selectedIndex: _indexFor(state.view),
+      onDestinationSelected: (index) {
+        switch (index) {
+          case 0:
+            onSelect('latest');
+          case 1:
+            onSelect('new');
+          case 2:
+            onSelect('queue');
+          case 3:
+            onSelect('channels');
+          default:
+            onMore();
+        }
+      },
+      destinations: [
+        const NavigationDestination(
+          key: Key('mobile-nav-latest'),
+          icon: Icon(Icons.bolt_outlined),
+          selectedIcon: Icon(Icons.bolt_rounded),
+          label: 'Ultimi',
+        ),
+        NavigationDestination(
+          key: const Key('mobile-nav-new'),
+          icon: _counted(Icons.fiber_new_outlined, state.newCount),
+          selectedIcon: _counted(Icons.fiber_new_rounded, state.newCount),
+          label: 'Nuovi',
+        ),
+        NavigationDestination(
+          key: const Key('mobile-nav-queue'),
+          icon: _counted(Icons.watch_later_outlined, state.watchLaterCount),
+          selectedIcon: _counted(
+            Icons.watch_later_rounded,
+            state.watchLaterCount,
+          ),
+          label: 'Dopo',
+        ),
+        NavigationDestination(
+          key: const Key('mobile-nav-channels'),
+          icon: const Icon(Icons.subscriptions_outlined),
+          selectedIcon: const Icon(Icons.subscriptions_rounded),
+          label: 'Canali',
+        ),
+        const NavigationDestination(
+          key: Key('mobile-nav-more'),
+          icon: Icon(Icons.more_horiz_rounded),
+          label: 'Altro',
+        ),
+      ],
+    );
+  }
+}
+
+class _RefreshableEmpty extends StatelessWidget {
+  const _RefreshableEmpty({required this.onRefresh, required this.child});
+
+  final Future<void> Function() onRefresh;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(child: child),
+            ),
+          );
+        },
       ),
     );
   }

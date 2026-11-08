@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../data/database.dart';
 import '../models.dart';
@@ -11,11 +14,13 @@ import '../services/local_video_service.dart';
 import '../services/rss_service.dart';
 import '../services/sponsorblock_service.dart';
 import '../services/video_chapters_service.dart';
+import '../services/download_keep_alive.dart';
 import '../services/video_download_service.dart';
 import '../services/video_link_service.dart';
 import '../services/update_service.dart';
 import '../services/video_tags_service.dart';
 import '../util/app_version.dart';
+import '../util/platform.dart';
 import '../util/chapter_parser.dart';
 import '../util/rss_grouping.dart';
 import '../version.dart';
@@ -41,18 +46,19 @@ class AppState extends ChangeNotifier {
     UpdateChecker? updateChecker,
     AppVersion? appVersion,
     CastController? castController,
-  })  : rss = rss ?? RssService(),
-        resolver = resolver ?? YouTubeResolver(),
-        sponsorBlock = sponsorBlock ?? SponsorBlockService(),
-        tags = tags ?? VideoTagsService(),
-        downloader = downloader ?? VideoDownloadService(),
-        videoLink = videoLink ?? VideoLinkService(),
-        chapterService = chapterService ?? VideoChaptersService(),
-        localVideoService = localVideos ?? const LocalVideoService(),
-        currentVersion = appVersion ?? _buildVersion(),
-        updateChecker = updateChecker ??
-            UpdateService(currentVersion: appVersion ?? _buildVersion()),
-        castController = castController ?? CastController();
+  }) : rss = rss ?? RssService(),
+       resolver = resolver ?? YouTubeResolver(),
+       sponsorBlock = sponsorBlock ?? SponsorBlockService(),
+       tags = tags ?? VideoTagsService(),
+       downloader = downloader ?? VideoDownloadService(),
+       videoLink = videoLink ?? VideoLinkService(),
+       chapterService = chapterService ?? VideoChaptersService(),
+       localVideoService = localVideos ?? const LocalVideoService(),
+       currentVersion = appVersion ?? _buildVersion(),
+       updateChecker =
+           updateChecker ??
+           UpdateService(currentVersion: appVersion ?? _buildVersion()),
+       castController = castController ?? CastController();
 
   final AppDatabase db;
   final RssService rss;
@@ -181,8 +187,8 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    updateLastCheck =
-        DateTime.tryParse(settings[_updateLastCheckKey] ?? '')?.toLocal();
+    updateLastCheck = DateTime.tryParse(settings[_updateLastCheckKey] ?? '')
+        ?.toLocal();
     updateSkippedVersion = _nonEmpty(settings[_updateSkippedVersionKey]);
     updateEtag = _nonEmpty(settings[_updateEtagKey]);
     updateCachedRelease = _nonEmpty(settings[_updateCachedReleaseKey]);
@@ -196,6 +202,7 @@ class AppState extends ChangeNotifier {
       await db.deleteSetting(_updateSkippedVersionKey);
     }
 
+    await db.resetStaleDownloads();
     channels = await db.getChannels();
     await reload();
     loading = false;
@@ -226,7 +233,7 @@ class AppState extends ChangeNotifier {
   /// check bypasses both the throttle and the ETag cache. A failed check never
   /// interrupts the app: [updateError] is exposed in the update dialog.
   Future<void> checkForUpdates({bool manual = false}) async {
-    if (_disposed || updateChecking) return;
+    if (!supportsDesktopUpdates || _disposed || updateChecking) return;
     if (!manual &&
         updateLastCheck != null &&
         DateTime.now().difference(updateLastCheck!) < _updateCheckInterval) {
@@ -433,8 +440,7 @@ class AppState extends ChangeNotifier {
     if (refreshing || _disposed) return;
     if (!force &&
         lastRefresh != null &&
-        DateTime.now().difference(lastRefresh!) <
-            const Duration(minutes: 10)) {
+        DateTime.now().difference(lastRefresh!) < const Duration(minutes: 10)) {
       return;
     }
 
@@ -460,9 +466,7 @@ class AppState extends ChangeNotifier {
           try {
             await _refreshChannel(channel, now);
           } catch (e) {
-            failures.add(
-              '${channel.displayTitle}: ${_shortError(e)}',
-            );
+            failures.add('${channel.displayTitle}: ${_shortError(e)}');
           }
         }),
       );
@@ -495,18 +499,11 @@ class AppState extends ChangeNotifier {
 
     final stored = channels.firstWhere(
       (item) => item.id == channel.id,
-      orElse: () => Channel(
-        id: channel.id,
-        title: channel.title,
-        addedAt: now,
-      ),
+      orElse: () => Channel(id: channel.id, title: channel.title, addedAt: now),
     );
 
     try {
-      await _refreshChannel(
-        stored,
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      await _refreshChannel(stored, DateTime.now().millisecondsSinceEpoch);
       await reload();
       return null;
     } catch (e) {
@@ -537,6 +534,11 @@ class AppState extends ChangeNotifier {
       watchedAt: DateTime.now().millisecondsSinceEpoch,
     );
     await reload();
+  }
+
+  Future<void> saveProgress(String videoId, int seconds) async {
+    if (seconds <= 0) return;
+    await db.setProgress(videoId, seconds);
   }
 
   Future<void> toggleWatched(VideoItem video) async {
@@ -580,12 +582,15 @@ class AppState extends ChangeNotifier {
     for (final path in paths) {
       if (!unique.add(path)) continue;
       try {
-        final metadata = await localVideoService.readMetadata(path);
+        // Android's document picker returns a cached copy. Keep a durable
+        // copy in app storage so the local library survives a cache purge.
+        final storedPath = await _materializeLocalPath(path);
+        final metadata = await localVideoService.readMetadata(storedPath);
         await db.upsertLocalVideo(
           LocalVideo(
-            path: path,
+            path: storedPath,
             title: localVideoService.titleFor(
-              path,
+              storedPath,
               metadataTitle: metadata.title,
             ),
             addedAt: DateTime.now().millisecondsSinceEpoch,
@@ -604,6 +609,21 @@ class AppState extends ChangeNotifier {
 
   Future<void> addLocalVideo(String path) async {
     await addLocalVideos([path]);
+  }
+
+  Future<String> _materializeLocalPath(String source) async {
+    if (!isAndroid) return source;
+    final support = await getApplicationSupportDirectory();
+    if (p.isWithin(support.path, source)) return source;
+    final directory = Directory(p.join(support.path, 'local_videos'));
+    await directory.create(recursive: true);
+    final name = p.basename(source);
+    final target = p.join(
+      directory.path,
+      '${DateTime.now().millisecondsSinceEpoch}_$name',
+    );
+    await File(source).copy(target);
+    return target;
   }
 
   /// Removes an entry from the local library without deleting the file.
@@ -745,11 +765,7 @@ class AppState extends ChangeNotifier {
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final channel in parsed) {
       await db.upsertChannel(
-        Channel(
-          id: channel.id,
-          title: channel.title,
-          addedAt: now,
-        ),
+        Channel(id: channel.id, title: channel.title, addedAt: now),
       );
     }
 
@@ -826,6 +842,7 @@ class AppState extends ChangeNotifier {
     _downloadsInProgress.add(video.id);
     downloadProgress[video.id] = 0;
     await db.setDownload(video.id, status: 'downloading');
+    await DownloadKeepAlive.begin();
     _notify();
 
     try {
@@ -844,15 +861,12 @@ class AppState extends ChangeNotifier {
       );
       await reload();
     } catch (e) {
-      await db.setDownload(
-        video.id,
-        status: 'error',
-        error: _shortError(e),
-      );
+      await db.setDownload(video.id, status: 'error', error: _shortError(e));
       await reload();
     } finally {
       _downloadsInProgress.remove(video.id);
       downloadProgress.remove(video.id);
+      await DownloadKeepAlive.end();
       _notify();
     }
   }
@@ -889,10 +903,7 @@ class AppState extends ChangeNotifier {
     try {
       final keywords = await tags.fetch(video.id);
       await db.setKeywords(video.id, keywords);
-      return video.copyWith(
-        keywords: keywords,
-        keywordsFetched: true,
-      );
+      return video.copyWith(keywords: keywords, keywordsFetched: true);
     } catch (_) {
       return video;
     }

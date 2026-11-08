@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../services/channel_search_service.dart';
 import '../state/app_state.dart';
+import '../util/platform.dart';
 import '../theme.dart';
 
 class ChannelSearchTab extends StatefulWidget {
@@ -29,7 +30,7 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focus.requestFocus();
+      if (mounted && !isMobilePlatform) _focus.requestFocus();
     });
   }
 
@@ -117,12 +118,34 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
                 enabled: !_loading,
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) => _search(),
+                onChanged: (_) => setState(() {}),
                 style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Cerca un canale per parola…',
-                  prefixIcon: Icon(Icons.search_rounded, size: 18),
-                  prefixIconConstraints:
-                      BoxConstraints(minWidth: 36, minHeight: 36),
+                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 42,
+                    minHeight: 48,
+                  ),
+                  suffixIcon: _query.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Cancella ricerca',
+                          onPressed: () {
+                            _query.clear();
+                            setState(() {
+                              _results = const [];
+                              _message = null;
+                              _error = null;
+                            });
+                            _focus.requestFocus();
+                          },
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                        ),
+                  suffixIconConstraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
                 ),
               ),
             ),
@@ -142,8 +165,10 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
           ],
         ),
         const SizedBox(height: 7),
-        const Text(
-          'La ricerca interroga YouTube. Poi aggiungi il canale con un click.',
+        Text(
+          isMobilePlatform
+              ? 'La ricerca interroga YouTube. Poi aggiungi il canale con un tocco.'
+              : 'La ricerca interroga YouTube. Poi aggiungi il canale con un click.',
           style: TextStyle(color: ExpeditusColors.muted, fontSize: 11),
         ),
         const SizedBox(height: 8),
@@ -248,20 +273,14 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
           const SizedBox(height: 6),
           Text(
             _error!,
-            style: const TextStyle(
-              color: ExpeditusColors.red,
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: ExpeditusColors.red, fontSize: 11),
           ),
         ],
         if (_message != null && _results.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             _message!,
-            style: const TextStyle(
-              color: ExpeditusColors.green,
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: ExpeditusColors.green, fontSize: 11),
           ),
         ],
       ],

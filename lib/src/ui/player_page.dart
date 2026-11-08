@@ -13,6 +13,7 @@ import '../state/app_state.dart';
 import '../state/cast_controller.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/platform.dart';
 import '../util/playback_rates.dart';
 import '../util/seek_accumulator.dart';
 import 'cast_dialog.dart';
@@ -37,15 +38,25 @@ class PlayerPage extends StatefulWidget {
   State<PlayerPage> createState() => _PlayerPageState();
 }
 
-class _PlayerPageState extends State<PlayerPage> {
+class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late final Player _player;
   VideoController? _controller;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   List<SponsorSegment> _segments = const [];
   Duration? _duration;
-  Duration _position = Duration.zero;
+  final ValueNotifier<Duration> _uiPosition = ValueNotifier(Duration.zero);
+  final ValueNotifier<Duration?> _uiDuration = ValueNotifier(null);
+  late final Listenable _footerListenable = Listenable.merge([
+    _uiPosition,
+    _uiDuration,
+  ]);
   bool _ready = false;
+  late bool _watched = widget.video.isWatched;
+  late bool _queued = widget.video.watchLater;
+  DateTime _lastProgressSave = DateTime.fromMillisecondsSinceEpoch(0);
+  int _videoEpoch = 0;
   String? _error;
+  String? _errorDetails;
   String? _quality;
   int? _lastSkippedEndMs;
   bool _watchedSent = false;
@@ -68,6 +79,7 @@ class _PlayerPageState extends State<PlayerPage> {
   void initState() {
     super.initState();
     MediaKit.ensureInitialized();
+    WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handleGlobalKey);
     _player = Player();
     _rate = _initialPlaybackRate();
@@ -88,6 +100,7 @@ class _PlayerPageState extends State<PlayerPage> {
     _subscriptions.add(
       _player.stream.duration.listen((value) {
         _duration = value;
+        _uiDuration.value = value;
       }),
     );
     _subscriptions.add(
@@ -95,6 +108,9 @@ class _PlayerPageState extends State<PlayerPage> {
         if (completed) _markWatched();
       }),
     );
+    _uiPosition.value = Duration.zero;
+    _uiDuration.value = null;
+    _lastProgressSave = DateTime.now();
     _subscriptions.add(
       _player.stream.error.listen((message) {
         if (mounted) setState(() => _error = message);
@@ -227,6 +243,14 @@ class _PlayerPageState extends State<PlayerPage> {
       await _player.open(Media(mediaUri.toString()), play: true);
       if (!mounted) return;
       await _player.setRate(_rate);
+      final saved = widget.video.progressSeconds;
+      if (!widget.video.isLocal && saved > 5) {
+        final total = _player.state.duration;
+        if (total == Duration.zero || saved < total.inSeconds - 10) {
+          await _player.seek(Duration(seconds: saved));
+          if (mounted) _toast('Ripreso da ${formatDuration(saved)}');
+        }
+      }
       setState(() => _ready = true);
       if (widget.state.castController.isConnected) {
         // Mute immediately, before the cast-friendly stream is resolved, so
@@ -247,7 +271,10 @@ class _PlayerPageState extends State<PlayerPage> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = _friendlyError(e));
+        setState(() {
+          _error = _friendlyError(e);
+          _errorDetails = e.toString().replaceFirst('Exception: ', '');
+        });
       }
     }
   }
@@ -269,7 +296,16 @@ class _PlayerPageState extends State<PlayerPage> {
 
   void _onPosition(Duration position) {
     if (!mounted) return;
-    _position = position;
+    _uiPosition.value = position;
+    if (!widget.video.isLocal) {
+      final now = DateTime.now();
+      if (now.difference(_lastProgressSave).inSeconds >= 5) {
+        _lastProgressSave = now;
+        unawaited(
+          widget.state.saveProgress(widget.video.id, position.inSeconds),
+        );
+      }
+    }
     final cast = widget.state.castController;
     if (cast.isCasting && _castMuted) {
       unawaited(cast.syncTo(position));
@@ -302,6 +338,9 @@ class _PlayerPageState extends State<PlayerPage> {
     if (widget.video.isLocal) return;
     if (_watchedSent) return;
     _watchedSent = true;
+    if (!_watched && mounted) {
+      setState(() => _watched = true);
+    }
     unawaited(widget.state.markWatched(widget.video));
   }
 
@@ -518,6 +557,7 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     setState(() {
       _error = null;
+      _errorDetails = null;
       _ready = false;
       _lastSkippedEndMs = null;
       _mediaUri = null;
@@ -537,7 +577,40 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused && !widget.video.isLocal) {
+      unawaited(
+        widget.state.saveProgress(
+          widget.video.id,
+          _player.state.position.inSeconds,
+        ),
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+    if (!widget.video.isLocal) {
+      unawaited(
+        widget.state.saveProgress(
+          widget.video.id,
+          _player.state.position.inSeconds,
+        ),
+      );
+    }
+    _uiPosition.dispose();
+    _uiDuration.dispose();
     final cast = widget.state.castController;
     cast.removeListener(_onCastChanged);
     if (cast.currentVideo?.id == widget.video.id) {
@@ -601,6 +674,7 @@ class _PlayerPageState extends State<PlayerPage> {
     if (_error != null) {
       return _PlayerError(
         message: _error!,
+        details: _errorDetails,
         local: widget.video.isLocal,
         onRetry: _retry,
         onOpenExternal: _openExternal,
@@ -633,10 +707,40 @@ class _PlayerPageState extends State<PlayerPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Video(
-          controller: _controller!,
-          controls: MaterialVideoControls,
-          fit: BoxFit.contain,
+        MaterialVideoControlsTheme(
+          normal: const MaterialVideoControlsThemeData(
+            seekBarPositionColor: ExpeditusColors.accent,
+            seekBarThumbColor: ExpeditusColors.accent,
+            seekBarBufferColor: ExpeditusColors.border,
+            seekBarColor: ExpeditusColors.border,
+            seekBarHeight: 3,
+          ),
+          fullscreen: const MaterialVideoControlsThemeData(
+            seekBarPositionColor: ExpeditusColors.accent,
+            seekBarThumbColor: ExpeditusColors.accent,
+            seekBarBufferColor: ExpeditusColors.border,
+            seekBarColor: ExpeditusColors.border,
+            seekBarHeight: 3,
+          ),
+          child: Video(
+            key: ValueKey('player-video-$_videoEpoch'),
+            controller: _controller!,
+            controls: MaterialVideoControls,
+            fit: BoxFit.contain,
+            onExitFullscreen: () async {
+              // MediaKit hides the system UI and locks landscape while the
+              // fullscreen route is open. Restore both, then recreate the
+              // texture so the surface returns to the in-page stage.
+              await SystemChrome.setEnabledSystemUIMode(
+                SystemUiMode.edgeToEdge,
+              );
+              await SystemChrome.setPreferredOrientations(
+                DeviceOrientation.values,
+              );
+              await Future<void>.delayed(const Duration(milliseconds: 250));
+              if (mounted) setState(() => _videoEpoch++);
+            },
+          ),
         ),
         if (showCastCover)
           Positioned.fill(
@@ -658,150 +762,349 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   Widget build(BuildContext context) {
     final cast = widget.state.castController;
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width < 860 || size.height < 480;
+    final veryShort = size.height < 480;
     return Scaffold(
       key: const Key('player-page'),
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: ExpeditusColors.text,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: Text(
-          widget.video.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          IconButton(
-            key: const Key('cast-button'),
-            tooltip: cast.isConnected
-                ? 'Trasmesso su ${cast.connectedDeviceName ?? 'dispositivo'}'
-                : 'Trasmetti su dispositivo',
-            onPressed: _openCastDialog,
-            icon: Icon(
-              cast.isConnected
-                  ? Icons.cast_connected_rounded
-                  : Icons.cast_rounded,
-              color: cast.isConnected ? ExpeditusColors.accent : null,
-            ),
-          ),
-          if (!widget.video.isLocal) ...[
-            IconButton(
-              key: const Key('chapters-button'),
-              tooltip: 'Capitoli e segnalibri',
-              onPressed: _showOutline,
-              icon: const Icon(Icons.format_list_bulleted_rounded),
-            ),
-            IconButton(
-              key: const Key('bookmark-add-button'),
-              tooltip: 'Aggiungi segnalibro con nota',
-              onPressed: _addBookmark,
-              icon: const Icon(Icons.bookmark_add_outlined),
-            ),
-          ],
-          PopupMenuButton<double>(
-            key: const Key('speed-button'),
-            tooltip: 'Velocità di riproduzione',
-            initialValue: _rate,
-            onOpened: () => _speedMenuOpen = true,
-            onCanceled: () => _speedMenuOpen = false,
-            onSelected: (rate) {
-              _speedMenuOpen = false;
-              _setRate(rate);
-            },
-            constraints: const BoxConstraints(maxHeight: 360),
-            itemBuilder: (context) => [
-              for (final rate in playbackRates)
-                PopupMenuItem<double>(
-                  value: rate,
-                  child: Text('${rate.toStringAsFixed(2)}×'),
-                ),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.speed_rounded, size: 17),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${_rate.toStringAsFixed(2)}×',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (!widget.video.isLocal) ...[
-            IconButton(
-              tooltip: widget.video.isWatched
-                  ? 'Segna da vedere'
-                  : 'Segna visto',
-              onPressed: () => widget.state.toggleWatched(widget.video),
-              icon: Icon(
-                widget.video.isWatched
-                    ? Icons.check_circle_rounded
-                    : Icons.check_circle_outline_rounded,
-                color: widget.video.isWatched
-                    ? ExpeditusColors.green
-                    : ExpeditusColors.muted,
-              ),
-            ),
-            IconButton(
-              tooltip: widget.video.watchLater
-                  ? 'Rimuovi da Guarda più tardi'
-                  : 'Guarda più tardi',
-              onPressed: () => widget.state.toggleQueued(widget.video),
-              icon: Icon(
-                widget.video.watchLater
-                    ? Icons.watch_later_rounded
-                    : Icons.watch_later_outlined,
-                color: widget.video.watchLater
-                    ? ExpeditusColors.accent
-                    : ExpeditusColors.muted,
-              ),
-            ),
-            IconButton(
-              tooltip: 'Apri su YouTube (O)',
-              onPressed: _openExternal,
-              icon: const Icon(Icons.open_in_new_rounded),
-            ),
-          ],
-          const SizedBox(width: 8),
-        ],
-      ),
+      appBar: _buildAppBar(cast, compact),
       body: Column(
         children: [
           Expanded(child: _buildStage(cast)),
-          _PlayerFooter(
-            video: widget.video,
-            quality: _quality,
-            castStatus: cast.isConnected
-                ? 'Cast · ${cast.connectedDeviceName ?? 'dispositivo'}'
-                      '${_castMuted ? ' · muto qui' : ''}'
-                : null,
-            position: _seekAccumulator.pending ?? _position,
-            duration: _duration,
-            sponsorSegments: _segments.length,
-            sponsorEnabled: widget.state.sponsorBlockEnabled,
-            onOpenExternal: _openExternal,
-            onToggleWatched: () => widget.state.toggleWatched(widget.video),
-            onToggleQueued: () => widget.state.toggleQueued(widget.video),
-            onSeekBack: () => _seekBy(-10),
-            onSeekForward: () => _seekBy(10),
-          ),
+          if (!veryShort)
+            SafeArea(
+              top: false,
+              child: AnimatedBuilder(
+                animation: _footerListenable,
+                builder: (context, _) => _PlayerFooter(
+                  video: widget.video,
+                  watched: _watched,
+                  queued: _queued,
+                  compact: compact,
+                  quality: _quality,
+                  castStatus: cast.isConnected
+                      ? 'Cast · ${cast.connectedDeviceName ?? 'dispositivo'}'
+                            '${_castMuted ? ' · muto qui' : ''}'
+                      : null,
+                  position: _uiPosition.value,
+                  duration: _uiDuration.value,
+                  sponsorSegments: _segments.length,
+                  sponsorEnabled: widget.state.sponsorBlockEnabled,
+                  onOpenExternal: _openExternal,
+                  onToggleWatched: _toggleWatched,
+                  onToggleQueued: _toggleQueued,
+                  onSeekBack: () => _seekBy(-10),
+                  onSeekForward: () => _seekBy(10),
+                  onSeek: _seekTo,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
+  PreferredSizeWidget _buildAppBar(CastController cast, bool compact) {
+    final local = widget.video.isLocal;
+    return AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: ExpeditusColors.text,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      title: Text(
+        widget.video.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+      actions: compact
+          ? [
+              PopupMenuButton<_PlayerAction>(
+                key: const Key('player-menu'),
+                tooltip: 'Azioni video',
+                onSelected: _onPlayerAction,
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: _PlayerAction.speed,
+                    child: _menuRow(
+                      Icons.speed_rounded,
+                      'Velocità (${_rate.toStringAsFixed(2)}×)',
+                    ),
+                  ),
+                  if (!local)
+                    PopupMenuItem(
+                      value: _PlayerAction.chapters,
+                      child: _menuRow(
+                        Icons.format_list_bulleted_rounded,
+                        'Capitoli e segnalibri',
+                      ),
+                    ),
+                  if (!local)
+                    PopupMenuItem(
+                      value: _PlayerAction.bookmark,
+                      child: _menuRow(
+                        Icons.bookmark_add_outlined,
+                        'Aggiungi segnalibro',
+                      ),
+                    ),
+                  if (supportsDlnaCast)
+                    PopupMenuItem(
+                      value: _PlayerAction.cast,
+                      child: _menuRow(
+                        Icons.cast_rounded,
+                        cast.isConnected
+                            ? 'Trasmesso su ${cast.connectedDeviceName ?? 'dispositivo'}'
+                            : 'Trasmetti su dispositivo',
+                      ),
+                    ),
+                  if (!local)
+                    PopupMenuItem(
+                      value: _PlayerAction.watched,
+                      child: _menuRow(
+                        _watched
+                            ? Icons.check_circle_rounded
+                            : Icons.check_circle_outline_rounded,
+                        _watched ? 'Segna da vedere' : 'Segna visto',
+                      ),
+                    ),
+                  if (!local)
+                    PopupMenuItem(
+                      value: _PlayerAction.queued,
+                      child: _menuRow(
+                        _queued
+                            ? Icons.watch_later_rounded
+                            : Icons.watch_later_outlined,
+                        _queued
+                            ? 'Rimuovi da Guarda più tardi'
+                            : 'Guarda più tardi',
+                      ),
+                    ),
+                  if (!local)
+                    PopupMenuItem(
+                      value: _PlayerAction.external,
+                      child: _menuRow(
+                        Icons.open_in_new_rounded,
+                        'Apri su YouTube',
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 4),
+            ]
+          : [
+              if (supportsDlnaCast)
+                IconButton(
+                  key: const Key('cast-button'),
+                  tooltip: cast.isConnected
+                      ? 'Trasmesso su ${cast.connectedDeviceName ?? 'dispositivo'}'
+                      : 'Trasmetti su dispositivo',
+                  onPressed: _openCastDialog,
+                  icon: Icon(
+                    cast.isConnected
+                        ? Icons.cast_connected_rounded
+                        : Icons.cast_rounded,
+                    color: cast.isConnected ? ExpeditusColors.accent : null,
+                  ),
+                ),
+              if (!local) ...[
+                IconButton(
+                  key: const Key('chapters-button'),
+                  tooltip: 'Capitoli e segnalibri',
+                  onPressed: _showOutline,
+                  icon: const Icon(Icons.format_list_bulleted_rounded),
+                ),
+                IconButton(
+                  key: const Key('bookmark-add-button'),
+                  tooltip: 'Aggiungi segnalibro con nota',
+                  onPressed: _addBookmark,
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                ),
+              ],
+              PopupMenuButton<double>(
+                key: const Key('speed-button'),
+                tooltip: 'Velocità di riproduzione',
+                initialValue: _rate,
+                onOpened: () => _speedMenuOpen = true,
+                onCanceled: () => _speedMenuOpen = false,
+                onSelected: (rate) {
+                  _speedMenuOpen = false;
+                  _setRate(rate);
+                },
+                constraints: const BoxConstraints(maxHeight: 360),
+                itemBuilder: (context) => [
+                  for (final rate in playbackRates)
+                    PopupMenuItem<double>(
+                      value: rate,
+                      child: Text('${rate.toStringAsFixed(2)}×'),
+                    ),
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.speed_rounded, size: 17),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${_rate.toStringAsFixed(2)}×',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (!local) ...[
+                IconButton(
+                  tooltip: _watched ? 'Segna da vedere' : 'Segna visto',
+                  onPressed: _toggleWatched,
+                  icon: Icon(
+                    _watched
+                        ? Icons.check_circle_rounded
+                        : Icons.check_circle_outline_rounded,
+                    color: _watched
+                        ? ExpeditusColors.green
+                        : ExpeditusColors.muted,
+                  ),
+                ),
+                IconButton(
+                  tooltip: _queued
+                      ? 'Rimuovi da Guarda più tardi'
+                      : 'Guarda più tardi',
+                  onPressed: _toggleQueued,
+                  icon: Icon(
+                    _queued
+                        ? Icons.watch_later_rounded
+                        : Icons.watch_later_outlined,
+                    color: _queued
+                        ? ExpeditusColors.accent
+                        : ExpeditusColors.muted,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Apri su YouTube (O)',
+                  onPressed: _openExternal,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                ),
+              ],
+              const SizedBox(width: 8),
+            ],
+    );
+  }
+
+  static Widget _menuRow(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Flexible(child: Text(label)),
+      ],
+    );
+  }
+
+  void _onPlayerAction(_PlayerAction action) {
+    switch (action) {
+      case _PlayerAction.speed:
+        unawaited(_showSpeedSheet());
+      case _PlayerAction.chapters:
+        unawaited(_showOutline());
+      case _PlayerAction.bookmark:
+        unawaited(_addBookmark());
+      case _PlayerAction.cast:
+        unawaited(_openCastDialog());
+      case _PlayerAction.watched:
+        _toggleWatched();
+      case _PlayerAction.queued:
+        _toggleQueued();
+      case _PlayerAction.external:
+        unawaited(_openExternal());
+    }
+  }
+
+  Future<void> _showSpeedSheet() async {
+    final selected = await showModalBottomSheet<double>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  'Velocità di riproduzione',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+              for (final rate in playbackRates)
+                ListTile(
+                  title: Text('${rate.toStringAsFixed(2)}×'),
+                  trailing: rate == _rate
+                      ? const Icon(
+                          Icons.check_rounded,
+                          color: ExpeditusColors.accent,
+                        )
+                      : null,
+                  onTap: () => Navigator.of(context).pop(rate),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null && mounted) _setRate(selected);
+  }
+
+  void _toggleWatched() {
+    setState(() => _watched = !_watched);
+    unawaited(widget.state.toggleWatched(widget.video));
+    _toast(_watched ? 'Segnato come visto' : 'Segnato da vedere');
+  }
+
+  void _toggleQueued() {
+    setState(() => _queued = !_queued);
+    unawaited(widget.state.toggleQueued(widget.video));
+    _toast(
+      _queued ? 'Aggiunto a Guarda più tardi' : 'Rimosso da Guarda più tardi',
+    );
+  }
+
+  void _seekTo(Duration target) {
+    if (!_ready) return;
+    final total = _duration;
+    final clamped = total == null
+        ? target
+        : Duration(
+            milliseconds: target.inMilliseconds.clamp(0, total.inMilliseconds),
+          );
+    _uiPosition.value = clamped;
+    unawaited(_player.seek(clamped));
+    final cast = widget.state.castController;
+    if (cast.isCasting && _castMuted) {
+      unawaited(cast.seekTo(clamped));
+    }
+  }
+
   static String _friendlyError(Object error) {
     final text = error.toString().replaceFirst('Exception: ', '');
-    if (text.contains('Sign in') || text.contains('bot')) {
+    final lower = text.toLowerCase();
+    if (lower.contains('sign in') || lower.contains('bot')) {
       return 'YouTube ha chiesto una verifica. Apri il video su YouTube per guardarlo.';
     }
-    return text;
+    if (lower.contains('unavailable') ||
+        lower.contains('private') ||
+        lower.contains('removed') ||
+        lower.contains('does not exist')) {
+      return 'Questo video non è disponibile su YouTube.';
+    }
+    if (lower.contains('no muxed stream')) {
+      return 'Nessun formato scaricabile è disponibile per questo video.';
+    }
+    return 'Impossibile riprodurre questo video. Riprova o aprilo su YouTube.';
   }
 }
 
@@ -811,73 +1114,117 @@ class _PlayerError extends StatelessWidget {
     required this.local,
     required this.onRetry,
     required this.onOpenExternal,
+    this.details,
   });
 
   final String message;
+  final String? details;
   final bool local;
   final VoidCallback onRetry;
   final VoidCallback onOpenExternal;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.error_outline_rounded,
-              size: 40,
-              color: ExpeditusColors.red,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 460,
+              minHeight: constraints.maxHeight > 48
+                  ? constraints.maxHeight - 48
+                  : 0,
             ),
-            const SizedBox(height: 12),
-            Text(
-              local ? 'File non disponibile' : 'Stream non disponibile',
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: ExpeditusColors.muted,
-                fontSize: 12.5,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                OutlinedButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('Riprova'),
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 40,
+                  color: ExpeditusColors.red,
                 ),
-                if (!local) ...[
-                  const SizedBox(width: 10),
-                  FilledButton.icon(
-                    onPressed: onOpenExternal,
-                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                    label: const Text('Apri su YouTube'),
+                const SizedBox(height: 12),
+                Text(
+                  local ? 'File non disponibile' : 'Stream non disponibile',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: ExpeditusColors.muted,
+                    fontSize: 12.5,
+                    height: 1.45,
+                  ),
+                ),
+                if (details != null && details!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Theme(
+                    data: Theme.of(context)
+                        .copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Dettagli tecnici',
+                        style: TextStyle(
+                          color: ExpeditusColors.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                      children: [
+                        SelectableText(
+                          details!,
+                          style: const TextStyle(
+                            color: ExpeditusColors.muted,
+                            fontSize: 10.5,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Riprova'),
+                    ),
+                    if (!local) ...[
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        onPressed: onOpenExternal,
+                        icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                        label: const Text('Apri su YouTube'),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _PlayerFooter extends StatelessWidget {
+class _PlayerFooter extends StatefulWidget {
   const _PlayerFooter({
     required this.video,
+    required this.watched,
+    required this.queued,
+    required this.compact,
     required this.quality,
     required this.castStatus,
     required this.position,
@@ -889,9 +1236,13 @@ class _PlayerFooter extends StatelessWidget {
     required this.onToggleQueued,
     required this.onSeekBack,
     required this.onSeekForward,
+    required this.onSeek,
   });
 
   final VideoItem video;
+  final bool watched;
+  final bool queued;
+  final bool compact;
   final String? quality;
   final String? castStatus;
   final Duration position;
@@ -903,18 +1254,48 @@ class _PlayerFooter extends StatelessWidget {
   final VoidCallback onToggleQueued;
   final VoidCallback onSeekBack;
   final VoidCallback onSeekForward;
+  final ValueChanged<Duration> onSeek;
+
+  @override
+  State<_PlayerFooter> createState() => _PlayerFooterState();
+}
+
+class _PlayerFooterState extends State<_PlayerFooter> {
+  double? _dragFraction;
 
   @override
   Widget build(BuildContext context) {
-    final description = video.description.trim();
-    final progress = duration != null && duration!.inMilliseconds > 0
-        ? (position.inMilliseconds / duration!.inMilliseconds).clamp(0.0, 1.0)
+    final video = widget.video;
+    final duration = widget.duration;
+    final displayedPosition = _dragFraction != null && duration != null
+        ? Duration(
+            milliseconds: (duration.inMilliseconds * _dragFraction!).round(),
+          )
+        : widget.position;
+    final progress = duration != null && duration.inMilliseconds > 0
+        ? (displayedPosition.inMilliseconds / duration.inMilliseconds).clamp(
+            0.0,
+            1.0,
+          )
         : 0.0;
+    final currentLabel = displayedPosition.inSeconds <= 0
+        ? '0:00'
+        : formatDuration(displayedPosition.inSeconds);
+    final totalLabel = duration == null || duration.inSeconds <= 0
+        ? '--:--'
+        : formatDuration(duration.inSeconds);
+    final timeLabel = '$currentLabel / $totalLabel';
+    final description = video.description.trim();
 
     return Container(
       width: double.infinity,
       color: ExpeditusColors.surface,
-      padding: const EdgeInsets.fromLTRB(24, 14, 24, 16),
+      padding: EdgeInsets.fromLTRB(
+        widget.compact ? 16 : 24,
+        widget.compact ? 10 : 14,
+        widget.compact ? 16 : 24,
+        widget.compact ? 8 : 16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -934,7 +1315,7 @@ class _PlayerFooter extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (castStatus != null)
+              if (widget.castStatus != null)
                 Flexible(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -947,7 +1328,7 @@ class _PlayerFooter extends StatelessWidget {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          castStatus!,
+                          widget.castStatus!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -959,11 +1340,13 @@ class _PlayerFooter extends StatelessWidget {
                     ],
                   ),
                 )
-              else if (quality != null)
+              else if (widget.quality != null)
                 Text(
                   video.isLocal
                       ? 'File locale · MP4'
-                      : 'Stream diretto · $quality',
+                      : video.isDownloaded
+                      ? 'Offline · MP4'
+                      : 'Stream diretto · ${widget.quality}',
                   style: const TextStyle(
                     color: ExpeditusColors.muted,
                     fontSize: 10.5,
@@ -986,7 +1369,7 @@ class _PlayerFooter extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               description,
-              maxLines: 3,
+              maxLines: widget.compact ? 2 : 3,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: ExpeditusColors.muted,
@@ -996,132 +1379,233 @@ class _PlayerFooter extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // One proportional column per element keeps the time text from
-              // moving the rest of the row when its length changes.
-              Expanded(
-                flex: 3,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 2,
-                    backgroundColor: ExpeditusColors.border,
-                    color: ExpeditusColors.accent,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      '${formatDuration(position.inSeconds)} / '
-                      '${duration == null ? '--:--' : formatDuration(duration!.inSeconds)}',
-                      maxLines: 1,
-                      softWrap: false,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: ExpeditusColors.muted,
-                        fontSize: 10.5,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 1,
-                child: IconButton(
-                  key: const Key('seek-back-button'),
-                  tooltip: 'Indietro 10 s (←)',
-                  onPressed: onSeekBack,
-                  icon: const Icon(Icons.replay_10_rounded, size: 20),
-                ),
-              ),
-              Expanded(
-                flex: 1,
-                child: IconButton(
-                  key: const Key('seek-forward-button'),
-                  tooltip: 'Avanti 10 s (→)',
-                  onPressed: onSeekForward,
-                  icon: const Icon(Icons.forward_10_rounded, size: 20),
-                ),
-              ),
-              if (!video.isLocal)
-                Expanded(
-                  flex: 2,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: sponsorEnabled
-                        ? Text(
-                            sponsorSegments > 0
-                                ? 'SponsorBlock · $sponsorSegments segmenti'
-                                : 'SponsorBlock attivo',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: sponsorSegments > 0
-                                  ? ExpeditusColors.green
-                                  : ExpeditusColors.muted,
-                              fontSize: 10.5,
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ),
-              if (!video.isLocal) ...[
-                Expanded(
-                  flex: 1,
-                  child: IconButton(
-                    tooltip:
-                        video.isWatched ? 'Segna da vedere' : 'Segna visto',
-                    onPressed: onToggleWatched,
-                    icon: Icon(
-                      video.isWatched
-                          ? Icons.check_circle_rounded
-                          : Icons.check_circle_outline_rounded,
-                      color: video.isWatched
-                          ? ExpeditusColors.green
-                          : ExpeditusColors.muted,
-                      size: 18,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: IconButton(
-                    tooltip: video.watchLater
-                        ? 'Rimuovi da Guarda più tardi'
-                        : 'Guarda più tardi',
-                    onPressed: onToggleQueued,
-                    icon: Icon(
-                      video.watchLater
-                          ? Icons.watch_later_rounded
-                          : Icons.watch_later_outlined,
-                      color: video.watchLater
-                          ? ExpeditusColors.accent
-                          : ExpeditusColors.muted,
-                      size: 18,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: IconButton(
-                    tooltip: 'Apri su YouTube',
-                    onPressed: onOpenExternal,
-                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
-                  ),
-                ),
-              ],
-            ],
-          ),
+          if (widget.compact)
+            _buildCompactControls(timeLabel, progress, duration)
+          else
+            _buildDesktopControls(timeLabel, progress),
         ],
       ),
     );
   }
+
+  Widget _buildCompactControls(
+    String timeLabel,
+    double progress,
+    Duration? duration,
+  ) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Text(
+              timeLabel,
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 10.5,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        SizedBox(
+          height: 34,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+            ),
+            child: Slider(
+              value: progress,
+              onChanged: duration == null
+                  ? null
+                  : (value) => setState(() => _dragFraction = value),
+              onChangeStart: duration == null
+                  ? null
+                  : (value) => setState(() => _dragFraction = value),
+              onChangeEnd: duration == null
+                  ? null
+                  : (value) {
+                      setState(() => _dragFraction = null);
+                      widget.onSeek(
+                        Duration(
+                          milliseconds: (duration.inMilliseconds * value)
+                              .round(),
+                        ),
+                      );
+                    },
+            ),
+          ),
+        ),
+        Row(
+          children: [
+            IconButton(
+              key: const Key('seek-back-button'),
+              tooltip: 'Indietro 10 s',
+              onPressed: widget.onSeekBack,
+              icon: const Icon(Icons.replay_10_rounded, size: 21),
+            ),
+            IconButton(
+              key: const Key('seek-forward-button'),
+              tooltip: 'Avanti 10 s',
+              onPressed: widget.onSeekForward,
+              icon: const Icon(Icons.forward_10_rounded, size: 21),
+            ),
+            const Spacer(),
+            if (!widget.video.isLocal && widget.sponsorEnabled)
+              Flexible(
+                child: Text(
+                  widget.sponsorSegments > 0
+                      ? 'SponsorBlock · ${widget.sponsorSegments}'
+                      : 'SponsorBlock attivo',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: widget.sponsorSegments > 0
+                        ? ExpeditusColors.green
+                        : ExpeditusColors.muted,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopControls(String timeLabel, double progress) {
+    final video = widget.video;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          flex: 3,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 2,
+              backgroundColor: ExpeditusColors.border,
+              color: ExpeditusColors.accent,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                timeLabel,
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: ExpeditusColors.muted,
+                  fontSize: 10.5,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: IconButton(
+            key: const Key('seek-back-button'),
+            tooltip: 'Indietro 10 s (←)',
+            onPressed: widget.onSeekBack,
+            icon: const Icon(Icons.replay_10_rounded, size: 20),
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: IconButton(
+            key: const Key('seek-forward-button'),
+            tooltip: 'Avanti 10 s (→)',
+            onPressed: widget.onSeekForward,
+            icon: const Icon(Icons.forward_10_rounded, size: 20),
+          ),
+        ),
+        if (!video.isLocal)
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: widget.sponsorEnabled
+                  ? Text(
+                      widget.sponsorSegments > 0
+                          ? 'SponsorBlock · ${widget.sponsorSegments} segmenti'
+                          : 'SponsorBlock attivo',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: widget.sponsorSegments > 0
+                            ? ExpeditusColors.green
+                            : ExpeditusColors.muted,
+                        fontSize: 10.5,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        if (!video.isLocal) ...[
+          Expanded(
+            flex: 1,
+            child: IconButton(
+              tooltip: widget.watched ? 'Segna da vedere' : 'Segna visto',
+              onPressed: widget.onToggleWatched,
+              icon: Icon(
+                widget.watched
+                    ? Icons.check_circle_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: widget.watched
+                    ? ExpeditusColors.green
+                    : ExpeditusColors.muted,
+                size: 18,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: IconButton(
+              tooltip: widget.queued
+                  ? 'Rimuovi da Guarda più tardi'
+                  : 'Guarda più tardi',
+              onPressed: widget.onToggleQueued,
+              icon: Icon(
+                widget.queued
+                    ? Icons.watch_later_rounded
+                    : Icons.watch_later_outlined,
+                color: widget.queued
+                    ? ExpeditusColors.accent
+                    : ExpeditusColors.muted,
+                size: 18,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: IconButton(
+              tooltip: 'Apri su YouTube',
+              onPressed: widget.onOpenExternal,
+              icon: const Icon(Icons.open_in_new_rounded, size: 17),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+enum _PlayerAction {
+  speed,
+  chapters,
+  bookmark,
+  cast,
+  watched,
+  queued,
+  external,
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'services/stream_resolver.dart';
 import 'state/app_state.dart';
@@ -18,11 +19,14 @@ class ExpeditusApp extends StatelessWidget {
       title: 'Expeditus',
       debugShowCheckedModeBanner: false,
       theme: expeditusTheme(),
+      themeMode: ThemeMode.dark,
+      locale: const Locale('it', 'IT'),
+      supportedLocales: const [Locale('it', 'IT')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       home: _RootGate(state: state, playerResolver: playerResolver),
     );
   }
 }
-
 
 class _RootGate extends StatelessWidget {
   const _RootGate({required this.state, this.playerResolver});

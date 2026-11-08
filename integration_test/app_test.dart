@@ -45,7 +45,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('import-dialog')), findsOneWidget);
 
-    await tester.tap(find.text('Incolla canali'));
+    await tester.tap(find.text('Incolla'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('import-paste-field')),
@@ -185,7 +185,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('import-button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Incolla canali'));
+    await tester.tap(find.text('Incolla'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('import-paste-field')),
@@ -255,6 +255,7 @@ void main() {
       '',
     );
     await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('channel-watched-aa1')));
     await tester.tap(find.byKey(const Key('channel-watched-aa1')));
     await _pumpUntil(
       tester,
@@ -300,6 +301,7 @@ void main() {
     expect(find.byKey(const Key('channel-video-aa2')), findsOneWidget);
 
     // Offline download through the fake downloader.
+    await tester.ensureVisible(find.byKey(const Key('channel-download-aa1')));
     await tester.tap(find.byKey(const Key('channel-download-aa1')));
     await _pumpUntil(
       tester,
@@ -378,7 +380,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('import-button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Incolla canali'));
+    await tester.tap(find.text('Incolla'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('import-paste-field')),
@@ -405,6 +407,7 @@ void main() {
       reason: 'la velocità del canale deve essere salvata',
     );
 
+    await tester.ensureVisible(find.byKey(const Key('channel-play-aa2')));
     await tester.tap(find.byKey(const Key('channel-play-aa2')));
     await _pumpUntil(
       tester,
@@ -416,7 +419,7 @@ void main() {
       () => find.text('1.50×').evaluate().isNotEmpty,
       reason: 'il player deve usare la velocità del canale',
     );
-    await tester.pageBack();
+    await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
   });
 
@@ -436,7 +439,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('import-button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Incolla canali'));
+    await tester.tap(find.text('Incolla'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('import-paste-field')),
@@ -496,7 +499,7 @@ void main() {
       reason: 'la velocità scelta deve essere applicata',
     );
 
-    await tester.pageBack();
+    await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('player-page')), findsNothing);
   });

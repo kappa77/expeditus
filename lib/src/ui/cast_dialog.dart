@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/dlna/dlna_models.dart';
 import '../state/cast_controller.dart';
 import '../theme.dart';
+import '../util/platform.dart';
 
 Future<bool?> showCastDialog(BuildContext context, CastController controller) {
   return showDialog<bool>(
@@ -408,9 +409,12 @@ class _CastDialogState extends State<CastDialog> {
         ],
         const SizedBox(height: 14),
         Text(
-          'Accendi il dispositivo e assicurati che sia sulla stessa rete '
-          'locale del PC. Windows potrebbe chiedere l\'accesso alla rete '
-          'la prima volta.',
+          isMobilePlatform
+              ? 'Accendi il dispositivo e assicurati che sia sulla stessa rete '
+                    'locale del telefono.'
+              : 'Accendi il dispositivo e assicurati che sia sulla stessa rete '
+                    'locale del PC. Windows potrebbe chiedere l\'accesso alla '
+                    'rete la prima volta.',
           style: const TextStyle(
             color: ExpeditusColors.muted,
             fontSize: 11,

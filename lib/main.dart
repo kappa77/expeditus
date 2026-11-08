@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/legacy.dart';
@@ -19,6 +20,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   await initializeDateFormatting('it_IT');
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: ExpeditusColors.background,
+      systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     try {
@@ -76,10 +87,7 @@ class _FatalErrorApp extends StatelessWidget {
                 children: [
                   const Text(
                     'Expeditus non è riuscito ad avviarsi',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 10),
                   Text(

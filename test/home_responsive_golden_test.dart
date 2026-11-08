@@ -14,11 +14,11 @@ import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:path/path.dart' as p;
 
-/// Regressione visiva della sidebar responsiva.
+/// Regressione visiva del layout responsivo.
 ///
-/// - Su un telefono (lato corto < 600dp) la sidebar collassa in un rail di
-///   sole icone, sia in portrait sia in landscape (dimensioni del moto g 30:
-///   720x1600 @ 1.75x => ~411x914 / ~914x411 logici).
+/// - Su un telefono (lato corto < 600dp) il layout usa AppBar, drawer e
+///   bottom navigation, sia in portrait sia in landscape (dimensioni del
+///   moto g 30: 720x1600 @ 1.75x => ~411x914 / ~914x411 logici).
 /// - Su un desktop la sidebar resta completa con le etichette.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +27,7 @@ void main() {
     await initializeDateFormatting('it_IT');
   });
 
-  testWidgets('telefono: rail di icone in portrait e landscape', (tester) async {
+  testWidgets('telefono: shell compatto in portrait e landscape', (tester) async {
     final harness = (await tester.runAsync(_Harness.create))!;
     addTearDown(harness.dispose);
 
