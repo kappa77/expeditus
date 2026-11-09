@@ -34,10 +34,3 @@ bool isCompactWidth(BuildContext context) {
   final size = MediaQuery.sizeOf(context);
   return size.width < compactBreakpoint || size.height < 480;
 }
-
-/// Wording helpers for the local-video copy.
-String get deviceNoun => isMobilePlatform ? 'dispositivo' : 'computer';
-String get onDeviceLabel =>
-    isMobilePlatform ? 'sul dispositivo' : 'sul computer';
-String get fromDeviceLabel =>
-    isMobilePlatform ? 'dal dispositivo' : 'dal computer';

@@ -232,6 +232,8 @@ class UpdateCheckResult {
     this.etag,
     this.rawBody,
     this.error,
+    this.failureKind,
+    this.statusCode,
   });
 
   final AppRelease? release;
@@ -242,6 +244,8 @@ class UpdateCheckResult {
   final String? etag;
   final String? rawBody;
   final String? error;
+  final UpdateFailureKind? failureKind;
+  final int? statusCode;
 
   bool get hasError => error != null;
 }

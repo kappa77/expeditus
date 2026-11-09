@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
-import '../util/platform.dart';
+import '../util/l10n.dart';
 import '../version.dart';
 
 class SettingsDialog extends StatelessWidget {
@@ -10,23 +11,25 @@ class SettingsDialog extends StatelessWidget {
 
   final AppState state;
 
-  static const _categories = <String, String>{
-    'sponsor': 'Sponsor',
-    'selfpromo': 'Autopromozione',
-    'interaction': 'Like / iscrizione',
-    'intro': 'Intro',
-    'outro': 'Outro',
-    'preview': 'Anteprima',
-    'music_offtopic': 'Musica fuori tema',
-    'filler': 'Riempitivo',
-  };
-
   static const _intervals = <int>[15, 30, 60, 120, 240];
+
+  static const _languageCodes = <String>['system', 'it', 'en', 'de', 'es'];
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final size = MediaQuery.sizeOf(context);
     final compact = size.width < 600 || size.height < 480;
+    final categories = <String, String>{
+      'sponsor': l10n.sponsorCategorySponsor,
+      'selfpromo': l10n.sponsorCategorySelfPromo,
+      'interaction': l10n.sponsorCategoryInteraction,
+      'intro': l10n.sponsorCategoryIntro,
+      'outro': l10n.sponsorCategoryOutro,
+      'preview': l10n.sponsorCategoryPreview,
+      'music_offtopic': l10n.sponsorCategoryMusicOfftopic,
+      'filler': l10n.sponsorCategoryFiller,
+    };
     final content = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
@@ -38,10 +41,10 @@ class SettingsDialog extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Impostazioni',
-                      style: TextStyle(
+                      l10n.settingsTitle,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
                       ),
@@ -62,20 +65,43 @@ class SettingsDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              const _SectionLabel('Lettura'),
+              _SectionLabel(l10n.sectionLanguage),
+              DropdownButtonFormField<String>(
+                key: const Key('settings-language'),
+                initialValue: state.localeCode,
+                items: [
+                  for (final code in _languageCodes)
+                    DropdownMenuItem(
+                      value: code,
+                      child: Text(_languageLabel(l10n, code)),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) state.setLocale(value);
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.languageSubtitle,
+                style: const TextStyle(
+                  color: ExpeditusColors.muted,
+                  fontSize: 11.5,
+                  height: 1.4,
+                ),
+              ),
+              const Divider(height: 24),
+              _SectionLabel(l10n.sectionReading),
               SwitchListTile(
                 key: const Key('settings-hide-descriptions'),
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Nascondi descrizioni'),
-                subtitle: const Text(
-                  'Mostra solo canale e titolo. Modalità focus.',
-                ),
+                title: Text(l10n.hideDescriptions),
+                subtitle: Text(l10n.hideDescriptionsSubtitle),
                 value: state.hideDescriptions,
                 activeThumbColor: ExpeditusColors.accent,
                 onChanged: state.setHideDescriptions,
               ),
               const Divider(height: 24),
-              const _SectionLabel('Aggiornamento'),
+              _SectionLabel(l10n.sectionUpdate),
               const SizedBox(height: 6),
               DropdownButtonFormField<int>(
                 key: const Key('settings-refresh'),
@@ -84,7 +110,7 @@ class SettingsDialog extends StatelessWidget {
                   for (final minutes in _intervals)
                     DropdownMenuItem(
                       value: minutes,
-                      child: Text('Ogni $minutes minuti'),
+                      child: Text(l10n.refreshEvery(minutes)),
                     ),
                 ],
                 onChanged: (value) {
@@ -92,24 +118,21 @@ class SettingsDialog extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Gli RSS di YouTube sono gratuiti e non consumano quota API. '
-                'Expeditus controlla i canali in modo scaglionato.',
-                style: TextStyle(
+              Text(
+                l10n.rssRefreshNote,
+                style: const TextStyle(
                   color: ExpeditusColors.muted,
                   fontSize: 11.5,
                   height: 1.4,
                 ),
               ),
               const Divider(height: 24),
-              const _SectionLabel('SponsorBlock'),
+              _SectionLabel(l10n.sectionSponsorBlock),
               SwitchListTile(
                 key: const Key('settings-sponsorblock'),
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Salta gli sponsor'),
-                subtitle: const Text(
-                  'Segmenti segnalati dalla community. Solo stream diretti.',
-                ),
+                title: Text(l10n.skipSponsors),
+                subtitle: Text(l10n.skipSponsorsSubtitle),
                 value: state.sponsorBlockEnabled,
                 activeThumbColor: ExpeditusColors.accent,
                 onChanged: state.setSponsorBlockEnabled,
@@ -119,7 +142,7 @@ class SettingsDialog extends StatelessWidget {
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  for (final entry in _categories.entries)
+                  for (final entry in categories.entries)
                     FilterChip(
                       label: Text(entry.value),
                       selected: state.sponsorCategories.contains(entry.key),
@@ -140,14 +163,11 @@ class SettingsDialog extends StatelessWidget {
                 ],
               ),
               const Divider(height: 24),
-              const _SectionLabel('Come funziona'),
+              _SectionLabel(l10n.sectionHowItWorks),
               const SizedBox(height: 6),
-              const Text(
-                'Expeditus non carica il player di YouTube. Risolve lo stream '
-                'del video e lo riproduce con libmpv: niente annunci del '
-                'player, niente raccomandazioni, niente autoplay. '
-                'SponsorBlock copre gli sponsor dentro il video.',
-                style: TextStyle(
+              Text(
+                l10n.howItWorksBody,
+                style: const TextStyle(
                   color: ExpeditusColors.muted,
                   fontSize: 11.5,
                   height: 1.45,
@@ -155,11 +175,8 @@ class SettingsDialog extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'La riproduzione dipende da YouTube: se un video non si '
-                'apre, usa “Apri su YouTube”. Iscrizioni e stato restano '
-                '$onDeviceLabel; l’app contatta YouTube per i feed e GitHub '
-                'per controllare le release.',
-                style: TextStyle(
+                l10n.privacyNote(onDeviceLocation(l10n)),
+                style: const TextStyle(
                   color: ExpeditusColors.muted,
                   fontSize: 11,
                   height: 1.4,
@@ -176,13 +193,12 @@ class SettingsDialog extends StatelessWidget {
                     applicationLegalese: 'MIT License',
                   ),
                   icon: const Icon(Icons.description_outlined, size: 16),
-                  label: const Text('Licenze open source'),
+                  label: Text(l10n.licensesButton),
                 ),
               ),
-              const Text(
-                'Le licenze dei componenti nativi (libmpv, ANGLE, SQLite) '
-                'sono disponibili nella pagina delle licenze.',
-                style: TextStyle(
+              Text(
+                l10n.licensesNote,
+                style: const TextStyle(
                   color: ExpeditusColors.muted,
                   fontSize: 10.5,
                   height: 1.4,
@@ -193,7 +209,7 @@ class SettingsDialog extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Fatto'),
+                  child: Text(l10n.done),
                 ),
               ),
             ],
@@ -218,6 +234,15 @@ class SettingsDialog extends StatelessWidget {
       ),
     );
   }
+
+  static String _languageLabel(AppLocalizations l10n, String code) =>
+      switch (code) {
+        'system' => l10n.languageSystem,
+        'it' => l10n.languageItalian,
+        'de' => l10n.languageGerman,
+        'es' => l10n.languageSpanish,
+        _ => l10n.languageEnglish,
+      };
 }
 
 class _SectionLabel extends StatelessWidget {

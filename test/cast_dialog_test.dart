@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:expeditus/l10n/generated/app_localizations.dart';
 import 'package:expeditus/src/services/dlna/dlna_models.dart';
 import 'package:expeditus/src/services/dlna/dlna_transport.dart';
 import 'package:expeditus/src/services/dlna/media_server.dart';
@@ -148,6 +149,9 @@ void main() {
   Future<void> openDialog(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('it'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
         home: Scaffold(
           body: Builder(
             builder: (context) => ElevatedButton(

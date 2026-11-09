@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../services/dlna/dlna_models.dart';
 import '../state/cast_controller.dart';
 import '../theme.dart';
+import '../util/cast_error_text.dart';
+import '../util/l10n.dart';
 import '../util/platform.dart';
 
 Future<bool?> showCastDialog(BuildContext context, CastController controller) {
@@ -63,7 +66,10 @@ class _CastDialogState extends State<CastDialog> {
     setState(() {
       _connecting = null;
       _failedDevice = device;
-      _connectError = _controller.error ?? 'Aggancio non riuscito.';
+      final failure = _controller.error;
+      _connectError = failure == null
+          ? context.l10n.castConnectFailed
+          : castFailureText(context.l10n, failure);
     });
   }
 
@@ -93,7 +99,12 @@ class _CastDialogState extends State<CastDialog> {
     final allowed = await _controller.allowFirewall();
     if (!mounted) return;
     if (!allowed) {
-      setState(() => _connectError = _controller.error);
+      final failure = _controller.error;
+      setState(
+        () => _connectError = failure == null
+            ? context.l10n.castConnectFailed
+            : castFailureText(context.l10n, failure),
+      );
       return;
     }
     await _controller.discover(force: true);
@@ -103,7 +114,12 @@ class _CastDialogState extends State<CastDialog> {
     final fixed = await _controller.allowPrivateNetwork();
     if (!mounted) return;
     if (!fixed) {
-      setState(() => _connectError = _controller.error);
+      final failure = _controller.error;
+      setState(
+        () => _connectError = failure == null
+            ? context.l10n.castConnectFailed
+            : castFailureText(context.l10n, failure),
+      );
       return;
     }
     await _controller.discover(force: true);
@@ -141,17 +157,17 @@ class _CastDialogState extends State<CastDialog> {
                           color: ExpeditusColors.accent,
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Trasmetti su dispositivo',
-                            style: TextStyle(
+                            context.l10n.castTitle,
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Chiudi',
+                          tooltip: context.l10n.close,
                           onPressed: _connecting == null
                               ? () => Navigator.of(context).pop(false)
                               : null,
@@ -178,15 +194,16 @@ class _CastDialogState extends State<CastDialog> {
   }
 
   Widget _buildConnected() {
+    final l10n = context.l10n;
     final controller = _controller;
     final device = controller.device;
     final status = switch (controller.playback) {
-      CastPlaybackState.starting => 'Avvio della riproduzione…',
-      CastPlaybackState.playing => 'In riproduzione sul dispositivo',
-      CastPlaybackState.paused => 'In pausa sul dispositivo',
-      CastPlaybackState.stopped => 'Connesso, in attesa di avvio',
-      CastPlaybackState.error => 'Errore sul dispositivo',
-      CastPlaybackState.idle => 'Connesso',
+      CastPlaybackState.starting => l10n.castStatusStarting,
+      CastPlaybackState.playing => l10n.castStatusPlaying,
+      CastPlaybackState.paused => l10n.castStatusPaused,
+      CastPlaybackState.stopped => l10n.castStatusStopped,
+      CastPlaybackState.error => l10n.castStatusError,
+      CastPlaybackState.idle => l10n.castStatusIdle,
     };
 
     return Column(
@@ -214,7 +231,7 @@ class _CastDialogState extends State<CastDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      device?.displayName ?? 'Dispositivo',
+                      _deviceLabel(device, l10n),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -238,7 +255,7 @@ class _CastDialogState extends State<CastDialog> {
         ),
         if (controller.error != null) ...[
           const SizedBox(height: 12),
-          _ErrorBox(message: controller.error!),
+          _ErrorBox(message: castFailureText(l10n, controller.error!)),
         ],
         if (controller.firewallRequired) ...[
           const SizedBox(height: 12),
@@ -252,10 +269,9 @@ class _CastDialogState extends State<CastDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'La TV non riesce a contattare il PC. Serve una regola di '
-                  'ingresso in Windows Firewall per Expeditus.',
-                  style: TextStyle(fontSize: 11.5, height: 1.4),
+                Text(
+                  l10n.castFirewallWarning,
+                  style: const TextStyle(fontSize: 11.5, height: 1.4),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
@@ -270,8 +286,8 @@ class _CastDialogState extends State<CastDialog> {
                       : const Icon(Icons.shield_outlined, size: 17),
                   label: Text(
                     controller.firewallBusy
-                        ? 'Attesa conferma Windows…'
-                        : 'Consenti accesso rete',
+                        ? l10n.castWaitingWindows
+                        : l10n.castAllowNetwork,
                   ),
                 ),
               ],
@@ -280,9 +296,7 @@ class _CastDialogState extends State<CastDialog> {
         ],
         const SizedBox(height: 16),
         Text(
-          'I video aperti in Expeditus vengono riprodotti anche sul '
-          'dispositivo. L\'audio dell\'app resta disattivato durante la '
-          'trasmissione.',
+          l10n.castExplanation,
           style: const TextStyle(
             color: ExpeditusColors.muted,
             fontSize: 11.5,
@@ -297,12 +311,12 @@ class _CastDialogState extends State<CastDialog> {
               key: const Key('cast-disconnect'),
               onPressed: _disconnect,
               icon: const Icon(Icons.cast_connected_rounded, size: 17),
-              label: const Text('Disconnetti'),
+              label: Text(l10n.disconnect),
             ),
             const SizedBox(width: 10),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Chiudi'),
+              child: Text(l10n.close),
             ),
           ],
         ),
@@ -311,8 +325,12 @@ class _CastDialogState extends State<CastDialog> {
   }
 
   Widget _buildDiscovery() {
+    final l10n = context.l10n;
     final controller = _controller;
-    final error = _connectError ?? controller.discoveryError;
+    final failure = controller.discoveryError;
+    final error =
+        _connectError ??
+        (failure == null ? null : castFailureText(l10n, failure));
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -320,10 +338,10 @@ class _CastDialogState extends State<CastDialog> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'Dispositivi DLNA',
-                style: TextStyle(
+                l10n.castDlnaDevices,
+                style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.1,
@@ -333,7 +351,7 @@ class _CastDialogState extends State<CastDialog> {
             ),
             IconButton(
               key: const Key('cast-refresh'),
-              tooltip: 'Cerca di nuovo',
+              tooltip: l10n.castSearchAgain,
               onPressed: controller.discovering || _connecting != null
                   ? null
                   : _refresh,
@@ -344,17 +362,20 @@ class _CastDialogState extends State<CastDialog> {
         if (controller.discovering) ...[
           const LinearProgressIndicator(minHeight: 2),
           const SizedBox(height: 10),
-          const Row(
+          Row(
             children: [
-              SizedBox(
+              const SizedBox(
                 width: 14,
                 height: 14,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              SizedBox(width: 9),
+              const SizedBox(width: 9),
               Text(
-                'Ricerca dispositivi in corso…',
-                style: TextStyle(color: ExpeditusColors.muted, fontSize: 12),
+                l10n.castSearching,
+                style: const TextStyle(
+                  color: ExpeditusColors.muted,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -396,7 +417,7 @@ class _CastDialogState extends State<CastDialog> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Aggancio a ${_connecting!.displayName}…',
+                    l10n.castConnecting(_deviceLabel(_connecting, l10n)),
                     style: const TextStyle(
                       fontSize: 12.5,
                       color: ExpeditusColors.text,
@@ -410,11 +431,8 @@ class _CastDialogState extends State<CastDialog> {
         const SizedBox(height: 14),
         Text(
           isMobilePlatform
-              ? 'Accendi il dispositivo e assicurati che sia sulla stessa rete '
-                    'locale del telefono.'
-              : 'Accendi il dispositivo e assicurati che sia sulla stessa rete '
-                    'locale del PC. Windows potrebbe chiedere l\'accesso alla '
-                    'rete la prima volta.',
+              ? l10n.castDiscoveryHintPhone
+              : l10n.castDiscoveryHintDesktop,
           style: const TextStyle(
             color: ExpeditusColors.muted,
             fontSize: 11,
@@ -429,7 +447,7 @@ class _CastDialogState extends State<CastDialog> {
               onPressed: _connecting == null
                   ? () => Navigator.of(context).pop(false)
                   : null,
-              child: const Text('Annulla'),
+              child: Text(l10n.cancel),
             ),
           ],
         ),
@@ -437,7 +455,13 @@ class _CastDialogState extends State<CastDialog> {
     );
   }
 
+  static String _deviceLabel(DlnaDevice? device, AppLocalizations l10n) {
+    final name = device?.displayName.trim();
+    return name == null || name.isEmpty ? l10n.deviceFallback : name;
+  }
+
   Widget _deviceList(CastController controller) {
+    final l10n = context.l10n;
     if (controller.devices.isEmpty) {
       if (controller.discovering) return const SizedBox(height: 24);
       return Padding(
@@ -452,8 +476,8 @@ class _CastDialogState extends State<CastDialog> {
             const SizedBox(height: 8),
             Text(
               controller.hasDiscovered
-                  ? 'Nessun dispositivo DLNA trovato.'
-                  : 'Nessun dispositivo disponibile.',
+                  ? l10n.castNoDevicesFound
+                  : l10n.castNoDevicesAvailable,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: ExpeditusColors.muted,
@@ -467,7 +491,7 @@ class _CastDialogState extends State<CastDialog> {
                 key: const Key('cast-retry-discovery'),
                 onPressed: _refresh,
                 icon: const Icon(Icons.search_rounded, size: 17),
-                label: const Text('Cerca di nuovo'),
+                label: Text(l10n.castSearchAgain),
               ),
               const SizedBox(height: 6),
               TextButton.icon(
@@ -478,8 +502,8 @@ class _CastDialogState extends State<CastDialog> {
                 icon: const Icon(Icons.shield_outlined, size: 16),
                 label: Text(
                   controller.firewallBusy
-                      ? 'Attesa conferma Windows…'
-                      : 'Consenti accesso rete',
+                      ? l10n.castWaitingWindows
+                      : l10n.castAllowNetwork,
                 ),
               ),
               const _TroubleshootingCard(),
@@ -521,7 +545,7 @@ class _CastDialogState extends State<CastDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              device.displayName,
+                              _deviceLabel(device, l10n),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -573,6 +597,7 @@ class _ErrorBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
@@ -608,7 +633,7 @@ class _ErrorBox extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 minimumSize: const Size(0, 28),
               ),
-              child: const Text('Riprova'),
+              child: Text(l10n.retry),
             ),
         ],
       ),
@@ -624,6 +649,7 @@ class _NetworkCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -634,11 +660,9 @@ class _NetworkCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'La rete Windows è impostata come "Pubblica", quindi la ricerca '
-            'dei dispositivi DLNA è bloccata. Rendi la rete "Privata" per '
-            'trovare la TV.',
-            style: TextStyle(fontSize: 11.5, height: 1.4),
+          Text(
+            l10n.castNetworkPublicWarning,
+            style: const TextStyle(fontSize: 11.5, height: 1.4),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
@@ -652,7 +676,7 @@ class _NetworkCard extends StatelessWidget {
                   )
                 : const Icon(Icons.lock_open_rounded, size: 17),
             label: Text(
-              busy ? 'Attesa conferma Windows…' : 'Rendi la rete privata',
+              busy ? l10n.castWaitingWindows : l10n.castMakeNetworkPrivate,
             ),
           ),
         ],
@@ -666,6 +690,7 @@ class _TroubleshootingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 12),
@@ -675,39 +700,23 @@ class _TroubleshootingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: ExpeditusColors.border),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Suggerimenti per la ricerca',
-            style: TextStyle(
+            l10n.castTroubleshootingTitle,
+            style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.1,
               color: ExpeditusColors.muted,
             ),
           ),
-          SizedBox(height: 8),
-          _TroubleshootingStep(
-            '1',
-            'Accendi la TV e verifica che sia collegata alla stessa rete '
-            'Wi-Fi o LAN del PC.',
-          ),
-          _TroubleshootingStep(
-            '2',
-            'Assicurati che la rete Windows sia "Privata" e non "Pubblica" '
-            '(usa il pulsante sopra per correggerla).',
-          ),
-          _TroubleshootingStep(
-            '3',
-            'Verifica che sulla TV sia attivo il renderer DLNA (es. '
-            '"Condivisione" o "Screen Mirroring").',
-          ),
-          _TroubleshootingStep(
-            '4',
-            'Consenti a Expeditus l\'accesso alla rete se Windows Firewall '
-            'lo richiede.',
-          ),
+          const SizedBox(height: 8),
+          _TroubleshootingStep('1', l10n.castTroubleshootingStep1),
+          _TroubleshootingStep('2', l10n.castTroubleshootingStep2),
+          _TroubleshootingStep('3', l10n.castTroubleshootingStep3),
+          _TroubleshootingStep('4', l10n.castTroubleshootingStep4),
         ],
       ),
     );

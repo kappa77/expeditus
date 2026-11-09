@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -25,6 +26,10 @@ import '../util/chapter_parser.dart';
 import '../util/rss_grouping.dart';
 import '../version.dart';
 import 'cast_controller.dart';
+
+enum ImportPhase { idle, resolving, importing }
+
+enum UpdateErrorOperation { check, saveState, saveSkipped, restoreSkipped }
 
 double _snapPlaybackRate(double value) {
   final clamped = value.clamp(0.25, 3.5).toDouble();
@@ -93,6 +98,7 @@ class AppState extends ChangeNotifier {
   bool loading = true;
   bool refreshing = false;
   String? error;
+  int refreshFailures = 0;
   DateTime? lastRefresh;
 
   bool hideDescriptions = false;
@@ -108,12 +114,24 @@ class AppState extends ChangeNotifier {
   String? updateEtag;
   String? updateCachedRelease;
   String? updateError;
+  UpdateFailureKind? updateErrorKind;
+  int? updateErrorStatus;
+  UpdateErrorOperation updateErrorOperation = UpdateErrorOperation.check;
   bool updateChecking = false;
   bool updateFromCache = false;
 
   bool importing = false;
-  String? importStatus;
+  ImportPhase importPhase = ImportPhase.idle;
+  int importCurrent = 0;
+  int importTotal = 0;
   final List<String> importErrors = [];
+
+  /// One of `it`, `en`, `de`, `es`, or `system`.
+  String localeCode = 'it';
+
+  static const supportedLocaleCodes = {'it', 'en', 'de', 'es', 'system'};
+
+  Locale? get locale => localeCode == 'system' ? null : Locale(localeCode);
 
   Timer? _timer;
   Timer? _updateTimer;
@@ -176,6 +194,11 @@ class AppState extends ChangeNotifier {
       double.tryParse(settings['playbackRate'] ?? '') ?? 1.0,
     );
     onboardingSeen = settings['onboardingSeen'] == '1';
+    final storedLocale = settings['locale'];
+    localeCode =
+        storedLocale != null && supportedLocaleCodes.contains(storedLocale)
+        ? storedLocale
+        : 'it';
     final rawCategories = settings['sponsorCategories'];
     if (rawCategories != null) {
       try {
@@ -242,6 +265,9 @@ class AppState extends ChangeNotifier {
 
     updateChecking = true;
     updateError = null;
+    updateErrorKind = null;
+    updateErrorStatus = null;
+    updateErrorOperation = UpdateErrorOperation.check;
     _notify();
 
     UpdateCheckResult result;
@@ -252,16 +278,15 @@ class AppState extends ChangeNotifier {
         bypassCache: manual,
       );
     } on Object catch (error) {
-      result = UpdateCheckResult(
-        checkedAt: DateTime.now(),
-        error: 'Controllo aggiornamenti non riuscito: $error',
-      );
+      result = UpdateCheckResult(checkedAt: DateTime.now(), error: '$error');
     }
     if (_disposed) return;
 
     updateLastCheck = result.checkedAt.toLocal();
     updateFromCache = result.fromCache;
     updateError = result.error;
+    updateErrorKind = result.failureKind;
+    updateErrorStatus = result.statusCode;
     if (result.release != null) {
       latestRelease = result.release;
       updateEtag = result.etag;
@@ -277,7 +302,10 @@ class AppState extends ChangeNotifier {
     try {
       await _persistUpdateState();
     } on Object catch (error) {
-      updateError = 'Impossibile salvare lo stato aggiornamenti: $error';
+      updateError = '$error';
+      updateErrorKind = null;
+      updateErrorStatus = null;
+      updateErrorOperation = UpdateErrorOperation.saveState;
     }
     _notify();
   }
@@ -289,7 +317,10 @@ class AppState extends ChangeNotifier {
     try {
       await db.setSetting(_updateSkippedVersionKey, updateSkippedVersion!);
     } on Object catch (error) {
-      updateError = 'Impossibile salvare la versione saltata: $error';
+      updateError = '$error';
+      updateErrorKind = null;
+      updateErrorStatus = null;
+      updateErrorOperation = UpdateErrorOperation.saveSkipped;
     }
     _notify();
   }
@@ -299,7 +330,10 @@ class AppState extends ChangeNotifier {
     try {
       await db.deleteSetting(_updateSkippedVersionKey);
     } on Object catch (error) {
-      updateError = 'Impossibile ripristinare la versione saltata: $error';
+      updateError = '$error';
+      updateErrorKind = null;
+      updateErrorStatus = null;
+      updateErrorOperation = UpdateErrorOperation.restoreSkipped;
     }
     _notify();
   }
@@ -452,6 +486,7 @@ class AppState extends ChangeNotifier {
 
     refreshing = true;
     error = null;
+    refreshFailures = 0;
     _notify();
 
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -474,9 +509,8 @@ class AppState extends ChangeNotifier {
 
     lastRefresh = DateTime.now();
     refreshing = false;
-    error = failures.isEmpty
-        ? null
-        : '${failures.length} canali non aggiornati';
+    refreshFailures = failures.length;
+    error = failures.isEmpty ? null : failures.join(' · ');
     await reload();
     _notify();
   }
@@ -664,6 +698,7 @@ class AppState extends ChangeNotifier {
     final channel = channels.firstWhere((item) => item.id == id);
     refreshing = true;
     error = null;
+    refreshFailures = 0;
     _notify();
 
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -732,13 +767,15 @@ class AppState extends ChangeNotifier {
     }
 
     importing = true;
-    importStatus = 'Risoluzione canali…';
+    importPhase = ImportPhase.resolving;
+    importCurrent = 0;
+    importTotal = inputs.length;
     importErrors.clear();
     _notify();
 
     final parsed = <ImportedChannel>[];
     for (var i = 0; i < inputs.length; i++) {
-      importStatus = 'Risoluzione ${i + 1}/${inputs.length}…';
+      importCurrent = i + 1;
       _notify();
       try {
         parsed.add(await resolver.resolve(inputs[i]));
@@ -756,7 +793,7 @@ class AppState extends ChangeNotifier {
   }) async {
     if (!alreadyResolving) {
       importing = true;
-      importStatus = 'Importazione…';
+      importPhase = ImportPhase.importing;
       importErrors.clear();
       _notify();
     }
@@ -771,7 +808,9 @@ class AppState extends ChangeNotifier {
 
     await reload();
     importing = false;
-    importStatus = null;
+    importPhase = ImportPhase.idle;
+    importCurrent = 0;
+    importTotal = 0;
     _notify();
 
     if (parsed.isNotEmpty) {
@@ -790,6 +829,14 @@ class AppState extends ChangeNotifier {
       skipped: parsed.length - added,
       errors: List.of(importErrors),
     );
+  }
+
+  Future<void> setLocale(String code) async {
+    if (!supportedLocaleCodes.contains(code)) return;
+    if (localeCode == code) return;
+    localeCode = code;
+    await db.setSetting('locale', code);
+    _notify();
   }
 
   Future<void> setHideDescriptions(bool value) async {

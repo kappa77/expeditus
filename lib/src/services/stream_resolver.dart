@@ -55,14 +55,10 @@ class StreamResolver {
 
       if (manifest.audioOnly.isNotEmpty) {
         final stream = manifest.audioOnly.withHighestBitrate();
-        return ResolvedStream(
-          url: stream.url,
-          quality: 'solo audio',
-          kind: 'audio',
-        );
+        return ResolvedStream(url: stream.url, quality: 'audio', kind: 'audio');
       }
 
-      throw Exception('Nessuno stream riproducibile per questo video.');
+      throw Exception('No playable stream for this video.');
     } finally {
       youtube.close();
     }
@@ -102,14 +98,10 @@ class StreamResolver {
 
       if (manifest.audioOnly.isNotEmpty) {
         final stream = manifest.audioOnly.withHighestBitrate();
-        return ResolvedStream(
-          url: stream.url,
-          quality: 'solo audio',
-          kind: 'audio',
-        );
+        return ResolvedStream(url: stream.url, quality: 'audio', kind: 'audio');
       }
 
-      throw Exception('Nessuno stream riproducibile per questo video.');
+      throw Exception('No playable stream for this video.');
     } finally {
       youtube.close();
     }

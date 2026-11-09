@@ -1,3 +1,4 @@
+import 'package:expeditus/l10n/generated/app_localizations.dart';
 import 'package:expeditus/src/models.dart';
 import 'package:expeditus/src/ui/cast_waiting_cover.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,9 @@ void main() {
   }) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('it'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
         home: Scaffold(
           body: CastWaitingCover(
             video: _video,

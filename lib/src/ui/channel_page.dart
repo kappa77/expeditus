@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/l10n.dart';
 import '../util/playback_rates.dart';
 import 'player_page.dart';
 
@@ -266,9 +266,9 @@ class _ChannelPageState extends State<ChannelPage>
                       labelColor: ExpeditusColors.accent,
                       unselectedLabelColor: ExpeditusColors.muted,
                       indicatorColor: ExpeditusColors.accent,
-                      tabs: const [
-                        Tab(text: 'Video'),
-                        Tab(text: 'Cronologia'),
+                      tabs: [
+                        Tab(text: context.l10n.tabVideos),
+                        Tab(text: context.l10n.tabHistory),
                       ],
                     ),
                   ),
@@ -279,7 +279,7 @@ class _ChannelPageState extends State<ChannelPage>
                         : _error != null
                         ? _Message(
                             icon: Icons.error_outline_rounded,
-                            title: 'Errore',
+                            title: context.l10n.errorTitle,
                             body: _error!,
                           )
                         : TabBarView(
@@ -364,9 +364,15 @@ class _ChannelHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final last = channel.lastChecked == null
-        ? 'mai aggiornato'
-        : 'aggiornato ${relativeTime(DateTime.fromMillisecondsSinceEpoch(channel.lastChecked!))}';
+        ? l10n.relativeNever
+        : l10n.updatedRelative(
+            relativeTime(
+              context,
+              DateTime.fromMillisecondsSinceEpoch(channel.lastChecked!),
+            ),
+          );
 
     return Container(
       padding: EdgeInsets.fromLTRB(compact ? 8 : 18, compact ? 8 : 18, 16, 10),
@@ -380,7 +386,7 @@ class _ChannelHeader extends StatelessWidget {
             children: [
               IconButton(
                 key: const Key('channel-back'),
-                tooltip: 'Indietro',
+                tooltip: l10n.back,
                 onPressed: onBack,
                 icon: const Icon(Icons.arrow_back_rounded),
               ),
@@ -401,9 +407,12 @@ class _ChannelHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${videos.length} video · $last'
-                      '${muted ? ' · RSS silenziato' : ''}'
-                      '${showInLatest ? '' : ' · fuori dalle novità'}',
+                      l10n.channelSummary(
+                        l10n.videosLabel(videos.length),
+                        '$last'
+                        '${muted ? l10n.channelMutedSuffix : ''}'
+                        '${showInLatest ? '' : l10n.channelHiddenSuffix}',
+                      ),
                       style: const TextStyle(
                         color: ExpeditusColors.muted,
                         fontSize: 11.5,
@@ -414,7 +423,7 @@ class _ChannelHeader extends StatelessWidget {
               ),
               IconButton(
                 key: const Key('channel-refresh-only'),
-                tooltip: 'Aggiorna solo questo canale',
+                tooltip: l10n.refreshOnlyChannel,
                 onPressed: refreshing ? null : onRefresh,
                 icon: refreshing
                     ? const SizedBox(
@@ -432,9 +441,9 @@ class _ChannelHeader extends StatelessWidget {
                 ),
                 if (!compact) ...[
                   const SizedBox(width: 6),
-                  const Text(
-                    'Carico tag…',
-                    style: TextStyle(
+                  Text(
+                    l10n.loadingTags,
+                    style: const TextStyle(
                       color: ExpeditusColors.muted,
                       fontSize: 11,
                     ),
@@ -458,7 +467,7 @@ class _ChannelHeader extends StatelessWidget {
                   textInputAction: TextInputAction.search,
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Cerca nel canale, anche nei tag…',
+                    hintText: l10n.searchChannelHint,
                     prefixIcon: const Icon(Icons.search_rounded, size: 18),
                     prefixIconConstraints: const BoxConstraints(
                       minWidth: 42,
@@ -467,7 +476,7 @@ class _ChannelHeader extends StatelessWidget {
                     suffixIcon: value.text.isEmpty
                         ? null
                         : IconButton(
-                            tooltip: 'Cancella ricerca',
+                            tooltip: l10n.clearSearch,
                             onPressed: onClear,
                             icon: const Icon(Icons.close_rounded, size: 18),
                           ),
@@ -486,10 +495,7 @@ class _ChannelHeader extends StatelessWidget {
             runSpacing: 4,
             children: [
               Tooltip(
-                message: muted
-                    ? 'Riattiva l’RSS: i nuovi video torneranno a essere proposti.'
-                    : 'Silenzia l’RSS: nessun nuovo video verrà proposto. '
-                          'Archivio e cronologia restano disponibili.',
+                message: muted ? l10n.unmuteRssTooltip : l10n.muteRssTooltip,
                 child: FilterChip(
                   key: const Key('channel-mute-rss'),
                   selected: muted,
@@ -504,7 +510,7 @@ class _ChannelHeader extends StatelessWidget {
                         ? ExpeditusColors.accent
                         : ExpeditusColors.muted,
                   ),
-                  label: Text(muted ? 'RSS silenziato' : 'Silenzia RSS'),
+                  label: Text(muted ? l10n.rssMuted : l10n.muteRss),
                   labelStyle: TextStyle(
                     fontSize: 11,
                     color: muted
@@ -522,8 +528,8 @@ class _ChannelHeader extends StatelessWidget {
               ),
               Tooltip(
                 message: showInLatest
-                    ? 'Nascondi l’ultimo video di questo canale dalla lista delle novità.'
-                    : 'Mostra l’ultimo video di questo canale nella lista delle novità.',
+                    ? l10n.hideFromLatestTooltip
+                    : l10n.showInLatestTooltip,
                 child: FilterChip(
                   key: const Key('channel-show-in-latest'),
                   selected: showInLatest,
@@ -538,7 +544,7 @@ class _ChannelHeader extends StatelessWidget {
                         ? ExpeditusColors.accent
                         : ExpeditusColors.muted,
                   ),
-                  label: const Text('Mostra in novità'),
+                  label: Text(l10n.showInLatest),
                   labelStyle: TextStyle(
                     fontSize: 11,
                     color: showInLatest
@@ -555,17 +561,17 @@ class _ChannelHeader extends StatelessWidget {
                 ),
               ),
               Tooltip(
-                message: 'Velocità predefinita quando apri i video di questo canale.',
+                message: l10n.defaultRateTooltip,
                 child: PopupMenuButton<double?>(
                   key: const Key('channel-playback-rate'),
-                  tooltip: 'Velocità predefinita del canale',
+                  tooltip: l10n.channelRateTooltip,
                   onSelected: (value) => onSetDefaultRate(
                     value == null || value < 0 ? null : value,
                   ),
                   itemBuilder: (context) => [
-                    const PopupMenuItem<double?>(
+                    PopupMenuItem<double?>(
                       value: -1.0,
-                      child: Text('Globale'),
+                      child: Text(l10n.global),
                     ),
                     for (final rate in playbackRates)
                       PopupMenuItem<double?>(
@@ -602,8 +608,10 @@ class _ChannelHeader extends StatelessWidget {
                         const SizedBox(width: 5),
                         Text(
                           defaultPlaybackRate == null
-                              ? 'Velocità globale'
-                              : 'Velocità ${defaultPlaybackRate!.toStringAsFixed(2)}×',
+                              ? l10n.globalRate
+                              : l10n.channelRate(
+                                  '${defaultPlaybackRate!.toStringAsFixed(2)}×',
+                                ),
                           style: TextStyle(
                             fontSize: 11,
                             color: defaultPlaybackRate == null
@@ -657,6 +665,7 @@ class _VideosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final all = allVideos.length;
     final unwatched = allVideos.where((video) => !video.isWatched).length;
     final watched = allVideos.where((video) => video.isWatched).length;
@@ -672,21 +681,21 @@ class _VideosTab extends StatelessWidget {
             children: [
               _FilterChip(
                 key: const Key('channel-filter-all'),
-                label: 'Tutti',
+                label: l10n.filterAll,
                 count: all,
                 selected: filter == 'all',
                 onTap: () => onFilter('all'),
               ),
               _FilterChip(
                 key: const Key('channel-filter-unwatched'),
-                label: 'Non visti',
+                label: l10n.filterUnwatched,
                 count: unwatched,
                 selected: filter == 'unwatched',
                 onTap: () => onFilter('unwatched'),
               ),
               _FilterChip(
                 key: const Key('channel-filter-watched'),
-                label: 'Visti',
+                label: l10n.filterWatched,
                 count: watched,
                 selected: filter == 'watched',
                 onTap: () => onFilter('watched'),
@@ -695,7 +704,7 @@ class _VideosTab extends StatelessWidget {
                 key: const Key('channel-filter-watch-later'),
                 child: _FilterChip(
                   key: const Key('channel-filter-queue'),
-                  label: 'Guarda più tardi',
+                  label: l10n.filterWatchLater,
                   count: queued,
                   selected: filter == 'queue',
                   onTap: () => onFilter('queue'),
@@ -713,15 +722,15 @@ class _VideosTab extends StatelessWidget {
                       ? Icons.video_library_outlined
                       : Icons.search_off_rounded,
                   title: muted
-                      ? 'RSS silenziato'
+                      ? l10n.emptyMutedTitle
                       : query.trim().isEmpty
-                      ? 'Nessun video'
-                      : 'Nessun risultato',
+                      ? l10n.emptyChannelVideosTitle
+                      : l10n.emptyFilterTitle,
                   body: muted
-                      ? 'Le novità non vengono proposte. Riattiva l’RSS dal pulsante in alto per vederle.'
+                      ? l10n.emptyMutedBody
                       : query.trim().isEmpty
-                      ? 'Questo canale non ha video nel feed RSS corrente.'
-                      : 'Nessun video corrisponde al filtro o al termine cercato.',
+                      ? l10n.emptyChannelVideosBody
+                      : l10n.emptyFilterBody,
                 )
               : _VideoList(
                   videos: videos,
@@ -765,15 +774,18 @@ class _HistoryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (videos.isEmpty) {
       return _Message(
         icon: query.trim().isEmpty
             ? Icons.history_rounded
             : Icons.search_off_rounded,
-        title: query.trim().isEmpty ? 'Cronologia vuota' : 'Nessun risultato',
+        title: query.trim().isEmpty
+            ? l10n.emptyHistoryTitle
+            : l10n.emptyFilterTitle,
         body: query.trim().isEmpty
-            ? 'I video che apri o segni come visti appariranno qui.'
-            : 'Nessun video della cronologia corrisponde al termine cercato.',
+            ? l10n.emptyHistoryBody
+            : l10n.emptyHistorySearchBody,
       );
     }
     return _VideoList(
@@ -869,10 +881,7 @@ class _VideoList extends StatelessWidget {
       final date = history && video.watchedAt != null
           ? DateTime.fromMillisecondsSinceEpoch(video.watchedAt!)
           : video.published;
-      final rawMonth = DateFormat('MMMM yyyy', 'it_IT').format(date);
-      final month = rawMonth.isEmpty
-          ? rawMonth
-          : rawMonth[0].toUpperCase() + rawMonth.substring(1);
+      final month = monthYear(context, date);
       if (month != currentMonth) {
         children.add(
           Padding(
@@ -937,10 +946,16 @@ class _ChannelVideoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final dimmed = video.isWatched;
     final dateLabel = history && video.watchedAt != null
-        ? 'aperto ${relativeTime(DateTime.fromMillisecondsSinceEpoch(video.watchedAt!))}'
-        : shortDate(video.published);
+        ? l10n.openedRelative(
+            relativeTime(
+              context,
+              DateTime.fromMillisecondsSinceEpoch(video.watchedAt!),
+            ),
+          )
+        : shortDate(context, video.published);
     final progress = ExpeditusDownloadProgress.of(context, video.id);
     final visibleTags = video.keywords.take(compact ? 4 : 8);
     final hiddenTags = video.keywords.length - visibleTags.length;
@@ -1004,14 +1019,11 @@ class _ChannelVideoTile extends StatelessWidget {
                               ),
                             ),
                           if (video.isWatched)
-                            const _Badge('Visto', ExpeditusColors.green),
+                            _Badge(l10n.badgeWatched, ExpeditusColors.green),
                           if (video.watchLater)
-                            const _Badge(
-                              'Guarda più tardi',
-                              ExpeditusColors.accent,
-                            ),
+                            _Badge(l10n.navWatchLater, ExpeditusColors.accent),
                           if (video.isDownloaded)
-                            const _Badge('Offline', ExpeditusColors.green),
+                            _Badge(l10n.offlineLabel, ExpeditusColors.green),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -1111,7 +1123,7 @@ class _ChannelVideoTile extends StatelessWidget {
                     children: [
                       IconButton(
                         key: ValueKey('channel-play-${video.id}'),
-                        tooltip: 'Guarda',
+                        tooltip: l10n.watchAction,
                         onPressed: onPlay,
                         icon: const Icon(
                           Icons.play_arrow_rounded,
@@ -1121,8 +1133,8 @@ class _ChannelVideoTile extends StatelessWidget {
                       IconButton(
                         key: ValueKey('channel-watched-${video.id}'),
                         tooltip: video.isWatched
-                            ? 'Segna da vedere'
-                            : 'Segna visto',
+                            ? l10n.markUnwatched
+                            : l10n.markWatched,
                         onPressed: onToggleWatched,
                         icon: Icon(
                           video.isWatched
@@ -1139,8 +1151,8 @@ class _ChannelVideoTile extends StatelessWidget {
                         child: IconButton(
                           key: ValueKey('channel-queue-${video.id}'),
                           tooltip: video.watchLater
-                              ? 'Rimuovi da Guarda più tardi'
-                              : 'Guarda più tardi',
+                              ? l10n.removeFromWatchLater
+                              : l10n.navWatchLater,
                           onPressed: onToggleQueued,
                           icon: Icon(
                             video.watchLater
@@ -1172,8 +1184,8 @@ class _ChannelVideoTile extends StatelessWidget {
                         IconButton(
                           key: ValueKey('channel-download-${video.id}'),
                           tooltip: video.isDownloaded
-                              ? 'Rimuovi il download'
-                              : 'Salva in locale',
+                              ? l10n.removeDownload
+                              : l10n.saveOffline,
                           onPressed: video.isDownloaded
                               ? onDeleteDownload
                               : onDownload,
@@ -1191,7 +1203,7 @@ class _ChannelVideoTile extends StatelessWidget {
                         ),
                       IconButton(
                         key: ValueKey('channel-open-${video.id}'),
-                        tooltip: 'Apri su YouTube',
+                        tooltip: l10n.openOnYouTube,
                         onPressed: onOpenExternal,
                         icon: const Icon(Icons.open_in_new_rounded, size: 17),
                       ),
@@ -1229,6 +1241,7 @@ class _CompactChannelActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (progress != null) {
       return SizedBox(
         width: 48,
@@ -1244,7 +1257,7 @@ class _CompactChannelActions extends StatelessWidget {
     }
     return PopupMenuButton<int>(
       key: ValueKey('channel-actions-${video.id}'),
-      tooltip: 'Azioni video',
+      tooltip: l10n.videoActions,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 220),
       onSelected: (index) {
@@ -1268,7 +1281,7 @@ class _CompactChannelActions extends StatelessWidget {
             children: [
               const Icon(Icons.play_arrow_rounded, size: 20),
               const SizedBox(width: 12),
-              const Text('Riproduci'),
+              Text(l10n.playAction),
             ],
           ),
         ),
@@ -1283,7 +1296,7 @@ class _CompactChannelActions extends StatelessWidget {
                 size: 20,
               ),
               const SizedBox(width: 12),
-              Text(video.isWatched ? 'Segna da vedere' : 'Segna visto'),
+              Text(video.isWatched ? l10n.markUnwatched : l10n.markWatched),
             ],
           ),
         ),
@@ -1300,8 +1313,8 @@ class _CompactChannelActions extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 video.watchLater
-                    ? 'Rimuovi da Guarda più tardi'
-                    : 'Guarda più tardi',
+                    ? l10n.removeFromWatchLater
+                    : l10n.navWatchLater,
               ),
             ],
           ),
@@ -1317,19 +1330,17 @@ class _CompactChannelActions extends StatelessWidget {
                 size: 20,
               ),
               const SizedBox(width: 12),
-              Text(
-                video.isDownloaded ? 'Rimuovi il download' : 'Salva in locale',
-              ),
+              Text(video.isDownloaded ? l10n.removeDownload : l10n.saveOffline),
             ],
           ),
         ),
         PopupMenuItem(
           value: 4,
           child: Row(
-            children: const [
-              Icon(Icons.open_in_new_rounded, size: 20),
-              SizedBox(width: 12),
-              Text('Apri su YouTube'),
+            children: [
+              const Icon(Icons.open_in_new_rounded, size: 20),
+              const SizedBox(width: 12),
+              Text(l10n.openOnYouTube),
             ],
           ),
         ),

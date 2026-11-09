@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../theme.dart';
+import '../util/l10n.dart';
 import '../util/format.dart';
 
 class VideoRow extends StatefulWidget {
@@ -51,16 +53,22 @@ class _VideoRowState extends State<VideoRow> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final video = widget.video;
     final accent = videoChannelColor(video.channelId);
     final dimmed = video.isWatched;
     final showDescription =
         !widget.hideDescription && video.description.trim().isNotEmpty;
     final dateLabel = widget.showWatchLaterDate && video.watchLaterAt != null
-        ? 'salvato ${relativeTime(DateTime.fromMillisecondsSinceEpoch(video.watchLaterAt!))}'
+        ? l10n.savedRelative(
+            relativeTime(
+              context,
+              DateTime.fromMillisecondsSinceEpoch(video.watchLaterAt!),
+            ),
+          )
         : widget.showAddedDate
-        ? 'aggiunto ${relativeTime(video.published)}'
-        : relativeTime(video.published);
+        ? l10n.addedRelative(relativeTime(context, video.published))
+        : relativeTime(context, video.published);
 
     final content = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
@@ -102,8 +110,8 @@ class _VideoRowState extends State<VideoRow> {
                     Flexible(
                       child: Tooltip(
                         message: widget.onChannelTap == null
-                            ? 'File locale'
-                            : 'Apri canale',
+                            ? l10n.localFileLabel
+                            : l10n.openChannel,
                         child: InkWell(
                           key: ValueKey('channel-link-${video.channelId}'),
                           onTap: widget.onChannelTap,
@@ -111,7 +119,10 @@ class _VideoRowState extends State<VideoRow> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             child: Text(
-                              video.channelTitle.toUpperCase(),
+                              (video.isLocal
+                                      ? l10n.localVideoLabel
+                                      : video.channelTitle)
+                                  .toUpperCase(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -195,11 +206,11 @@ class _VideoRowState extends State<VideoRow> {
                   ),
                 ),
               if (video.watchLater && !video.isLocal)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 4),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: Tooltip(
-                    message: 'In Guarda più tardi',
-                    child: Icon(
+                    message: l10n.navWatchLater,
+                    child: const Icon(
                       Icons.watch_later_rounded,
                       size: 14,
                       color: ExpeditusColors.accent,
@@ -219,7 +230,8 @@ class _VideoRowState extends State<VideoRow> {
               if (widget.compact)
                 _CompactActionsButton(
                   key: ValueKey('video-actions-${video.id}'),
-                  actions: _actions(context),
+                  actions: _actions(l10n),
+                  tooltip: l10n.videoActions,
                 )
               else ...[
                 if (_hovered || widget.selected)
@@ -243,14 +255,16 @@ class _VideoRowState extends State<VideoRow> {
                     children: [
                       if (widget.onRemove != null)
                         _MiniAction(
-                          tooltip: 'Rimuovi dalla lista',
+                          tooltip: l10n.removeFromList,
                           icon: Icons.remove_circle_outline_rounded,
                           onTap: widget.onRemove!,
                         )
                       else ...[
                         if (widget.onToggleWatched != null)
                           _MiniAction(
-                            tooltip: 'Segna visto',
+                            tooltip: video.isWatched
+                                ? l10n.markUnwatched
+                                : l10n.markWatched,
                             icon: video.isWatched
                                 ? Icons.check_circle_rounded
                                 : Icons.check_circle_outline_rounded,
@@ -259,8 +273,8 @@ class _VideoRowState extends State<VideoRow> {
                         if (widget.onToggleQueued != null)
                           _MiniAction(
                             tooltip: video.watchLater
-                                ? 'Rimuovi da Guarda più tardi'
-                                : 'Guarda più tardi',
+                                ? l10n.removeFromWatchLater
+                                : l10n.navWatchLater,
                             icon: video.watchLater
                                 ? Icons.watch_later_rounded
                                 : Icons.watch_later_outlined,
@@ -293,16 +307,16 @@ class _VideoRowState extends State<VideoRow> {
     );
   }
 
-  List<(IconData, String, VoidCallback)> _actions(BuildContext context) {
+  List<(IconData, String, VoidCallback)> _actions(AppLocalizations l10n) {
     final video = widget.video;
     return [
-      (Icons.play_arrow_rounded, 'Riproduci', widget.onPlay),
+      (Icons.play_arrow_rounded, l10n.playAction, widget.onPlay),
       if (widget.onToggleWatched != null)
         (
           video.isWatched
               ? Icons.check_circle_rounded
               : Icons.check_circle_outline_rounded,
-          video.isWatched ? 'Segna da vedere' : 'Segna visto',
+          video.isWatched ? l10n.markUnwatched : l10n.markWatched,
           widget.onToggleWatched!,
         ),
       if (widget.onToggleQueued != null)
@@ -310,22 +324,22 @@ class _VideoRowState extends State<VideoRow> {
           video.watchLater
               ? Icons.watch_later_rounded
               : Icons.watch_later_outlined,
-          video.watchLater ? 'Rimuovi da Guarda più tardi' : 'Guarda più tardi',
+          video.watchLater ? l10n.removeFromWatchLater : l10n.navWatchLater,
           widget.onToggleQueued!,
         ),
       if (widget.onChannelTap != null)
-        (Icons.podcasts_rounded, 'Apri canale', widget.onChannelTap!),
+        (Icons.podcasts_rounded, l10n.openChannel, widget.onChannelTap!),
       if (widget.onRemove != null)
         (
           Icons.remove_circle_outline_rounded,
-          'Rimuovi dalla lista',
+          l10n.removeFromList,
           widget.onRemove!,
         ),
     ];
   }
 
   void _showActionSheet(BuildContext context) {
-    final actions = _actions(context);
+    final actions = _actions(context.l10n);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -364,14 +378,19 @@ class _VideoRowState extends State<VideoRow> {
 }
 
 class _CompactActionsButton extends StatelessWidget {
-  const _CompactActionsButton({super.key, required this.actions});
+  const _CompactActionsButton({
+    super.key,
+    required this.actions,
+    required this.tooltip,
+  });
 
   final List<(IconData, String, VoidCallback)> actions;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<int>(
-      tooltip: 'Azioni video',
+      tooltip: tooltip,
       padding: EdgeInsets.zero,
       iconSize: 22,
       constraints: const BoxConstraints(minWidth: 210),

@@ -8,6 +8,8 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/platform.dart';
 import '../util/format.dart';
+import '../util/l10n.dart';
+import '../util/update_error_text.dart';
 
 Future<void> showUpdateDialog(BuildContext context, AppState state) {
   return showDialog<void>(
@@ -43,6 +45,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
     return Dialog(
       key: const Key('update-dialog'),
@@ -84,10 +87,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
                         ),
                       ),
                       const SizedBox(width: 11),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Aggiornamenti',
-                          style: TextStyle(
+                          l10n.updatesTitle,
+                          style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
                           ),
@@ -95,7 +98,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                       ),
                       IconButton(
                         key: const Key('update-close'),
-                        tooltip: 'Chiudi',
+                        tooltip: l10n.close,
                         onPressed: () => Navigator.of(context).pop(),
                         icon: const Icon(Icons.close_rounded),
                       ),
@@ -103,13 +106,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   ),
                   const SizedBox(height: 12),
                   _VersionLine(
-                    label: 'Installata',
+                    label: l10n.installedVersion,
                     version: state.currentVersionLabel,
                   ),
                   if (release != null) ...[
                     const SizedBox(height: 4),
                     _VersionLine(
-                      label: state.hasUpdate ? 'Disponibile' : 'Ultima release',
+                      label: state.hasUpdate
+                          ? l10n.availableVersion
+                          : l10n.latestRelease,
                       version: 'v${release.version.canonical}',
                       accent: state.hasUpdate,
                     ),
@@ -119,8 +124,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
                     const LinearProgressIndicator(minHeight: 2),
                   ],
                   const SizedBox(height: 12),
-                  if (state.updateError != null) ...[
-                    _UpdateError(message: state.updateError!),
+                  if (updateErrorMessage(l10n, state) case final message?) ...[
+                    _UpdateError(message: message),
                     const SizedBox(height: 10),
                   ],
                   if (state.hasUpdate && release != null) ...[
@@ -142,7 +147,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                                 ? null
                                 : () => _open(asset.url),
                             icon: const Icon(Icons.download_rounded, size: 18),
-                            label: const Text('Scarica installer'),
+                            label: Text(l10n.downloadInstaller),
                           )
                         else
                           FilledButton.icon(
@@ -154,7 +159,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                               Icons.open_in_new_rounded,
                               size: 18,
                             ),
-                            label: const Text('Apri release'),
+                            label: Text(l10n.openRelease),
                           ),
                         OutlinedButton.icon(
                           key: const Key('update-check-now'),
@@ -162,12 +167,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
                               ? null
                               : () => state.checkForUpdates(manual: true),
                           icon: const Icon(Icons.refresh_rounded, size: 18),
-                          label: const Text('Controlla ora'),
+                          label: Text(l10n.checkNow),
                         ),
                         TextButton(
                           key: const Key('update-skip'),
                           onPressed: state.skipUpdateVersion,
-                          child: const Text('Salta questa versione'),
+                          child: Text(l10n.skipVersion),
                         ),
                       ],
                     ),
@@ -178,15 +183,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
                         child: TextButton.icon(
                           onPressed: () => _open(release.pageUrl),
                           icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                          label: const Text('Pagina della release'),
+                          label: Text(l10n.releasePage),
                         ),
                       ),
                     ],
                     const SizedBox(height: 6),
                     Text(
-                      asset != null
-                          ? 'Dopo il download, chiudi Expeditus e avvia l’installer.'
-                          : 'Apri la pagina della release per scaricare la versione più recente.',
+                      asset != null ? l10n.installerNote : l10n.releasePageNote,
                       style: const TextStyle(
                         color: ExpeditusColors.muted,
                         fontSize: 10.5,
@@ -207,7 +210,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                             ? null
                             : () => state.checkForUpdates(manual: true),
                         icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text('Controlla ora'),
+                        label: Text(l10n.checkNow),
                       ),
                     ),
                   ] else if (release == null) ...[
@@ -221,7 +224,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                             ? null
                             : () => state.checkForUpdates(manual: true),
                         icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text('Controlla ora'),
+                        label: Text(l10n.checkNow),
                       ),
                     ),
                   ] else ...[
@@ -235,7 +238,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                             ? null
                             : () => state.checkForUpdates(manual: true),
                         icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text('Controlla ora'),
+                        label: Text(l10n.checkNow),
                       ),
                     ),
                   ],
@@ -244,7 +247,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                     children: [
                       Expanded(
                         child: Text(
-                          _lastCheckLabel(state),
+                          _lastCheckLabel(state, context),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -255,7 +258,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                       ),
                       TextButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Chiudi'),
+                        child: Text(l10n.close),
                       ),
                     ],
                   ),
@@ -268,11 +271,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
     );
   }
 
-  static String _lastCheckLabel(AppState state) {
+  static String _lastCheckLabel(AppState state, BuildContext context) {
+    final l10n = context.l10n;
     final last = state.updateLastCheck;
-    if (last == null) return 'Mai controllato';
-    final suffix = state.updateFromCache ? ' · dati in cache' : '';
-    return 'Ultimo controllo: ${relativeTime(last)}$suffix';
+    if (last == null) return l10n.lastCheckNever;
+    final relative = relativeTime(context, last);
+    return state.updateFromCache
+        ? l10n.lastCheckCached(relative)
+        : l10n.lastCheck(relative);
   }
 
   Future<void> _open(String url) async {
@@ -362,7 +368,7 @@ class _ReleaseCard extends StatelessWidget {
               ),
               if (published != null)
                 Text(
-                  shortDate(published),
+                  shortDate(context, published),
                   style: const TextStyle(
                     color: ExpeditusColors.muted,
                     fontSize: 10.5,
@@ -437,6 +443,7 @@ class _NotCheckedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       decoration: BoxDecoration(
@@ -444,19 +451,18 @@ class _NotCheckedCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(9),
         border: Border.all(color: ExpeditusColors.border),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(
+          const Icon(
             Icons.info_outline_rounded,
             size: 18,
             color: ExpeditusColors.muted,
           ),
-          SizedBox(width: 9),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'Nessun controllo recente. Verifica ora se è disponibile una '
-              'nuova versione.',
-              style: TextStyle(fontSize: 12.5),
+              l10n.notCheckedTitle,
+              style: const TextStyle(fontSize: 12.5),
             ),
           ),
         ],
@@ -472,6 +478,7 @@ class _UpToDateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       decoration: BoxDecoration(
@@ -489,9 +496,7 @@ class _UpToDateCard extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(
             child: Text(
-              fromCache
-                  ? 'Expeditus è aggiornato (dati in cache).'
-                  : 'Expeditus è aggiornato.',
+              fromCache ? l10n.upToDateCached : l10n.upToDate,
               style: const TextStyle(fontSize: 12.5),
             ),
           ),
@@ -509,6 +514,7 @@ class _SkippedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 11, 8, 11),
       decoration: BoxDecoration(
@@ -526,15 +532,14 @@ class _SkippedCard extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'Hai saltato la versione $version. Ti verrà proposta la '
-              'prossima release.',
+              l10n.skippedVersion(version),
               style: const TextStyle(fontSize: 12),
             ),
           ),
           TextButton(
             key: const Key('update-restore-skipped'),
             onPressed: () => onRestore(),
-            child: const Text('Ripristina'),
+            child: Text(l10n.restore),
           ),
         ],
       ),

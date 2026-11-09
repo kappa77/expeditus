@@ -88,7 +88,7 @@ class LocalVideo {
     return VideoItem(
       id: 'local:$path',
       channelId: 'local',
-      channelTitle: 'Video locale',
+      channelTitle: '',
       title: title,
       description: path,
       publishedAt: addedAt,
@@ -258,9 +258,8 @@ class VideoItem {
       title: (map['title'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
       publishedAt: (map['published_at'] as int?) ?? 0,
-      firstSeenAt: (map['first_seen_at'] as int?) ??
-          (map['published_at'] as int?) ??
-          0,
+      firstSeenAt:
+          (map['first_seen_at'] as int?) ?? (map['published_at'] as int?) ?? 0,
       durationSeconds: map['duration_seconds'] as int?,
       status: (map['status'] as String?) ?? 'new',
       queued: (map['queued'] as int?) == 1,
@@ -339,7 +338,6 @@ class SponsorSegment {
   final String category;
 }
 
-
 class VideoChapter {
   const VideoChapter({required this.startSeconds, required this.title});
 
@@ -353,10 +351,7 @@ class VideoChapter {
     );
   }
 
-  Map<String, Object?> toJson() => {
-        'start': startSeconds,
-        'title': title,
-      };
+  Map<String, Object?> toJson() => {'start': startSeconds, 'title': title};
 }
 
 class VideoBookmark {

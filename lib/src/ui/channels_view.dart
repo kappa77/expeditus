@@ -4,6 +4,7 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/l10n.dart';
 import 'import_dialog.dart';
 
 class ChannelsView extends StatelessWidget {
@@ -18,6 +19,7 @@ class ChannelsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (state.channels.isEmpty) {
       return Center(
         child: Column(
@@ -29,14 +31,17 @@ class ChannelsView extends StatelessWidget {
               color: ExpeditusColors.muted,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Nessun canale',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            Text(
+              l10n.noChannelsTitle,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Importa le tue iscrizioni per iniziare.',
-              style: TextStyle(color: ExpeditusColors.muted, fontSize: 13),
+            Text(
+              l10n.noChannelsBody,
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -49,13 +54,13 @@ class ChannelsView extends StatelessWidget {
                 if (result != null && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('${result.added} canali importati.'),
+                      content: Text(l10n.channelsImportedCount(result.added)),
                     ),
                   );
                 }
               },
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Importa iscrizioni'),
+              label: Text(l10n.importSubscriptions),
             ),
           ],
         ),
@@ -79,22 +84,21 @@ class ChannelsView extends StatelessWidget {
   }
 
   Future<void> _confirmDelete(BuildContext context, Channel channel) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: ExpeditusColors.surface,
-        title: const Text('Rimuovere il canale?'),
-        content: Text(
-          '${channel.displayTitle} verrà rimosso da Expeditus. I video già salvati verranno eliminati.',
-        ),
+        title: Text(l10n.deleteChannelTitle),
+        content: Text(l10n.deleteChannelBody(channel.displayTitle)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Annulla'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Rimuovi'),
+            child: Text(l10n.remove),
           ),
         ],
       ),
@@ -122,9 +126,15 @@ class _ChannelRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final last = channel.lastChecked == null
-        ? 'mai aggiornato'
-        : 'aggiornato ${relativeTime(DateTime.fromMillisecondsSinceEpoch(channel.lastChecked!))}';
+        ? l10n.relativeNever
+        : l10n.updatedRelative(
+            relativeTime(
+              context,
+              DateTime.fromMillisecondsSinceEpoch(channel.lastChecked!),
+            ),
+          );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: InkWell(
@@ -194,7 +204,7 @@ class _ChannelRow extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Tooltip(
-                message: channel.muted ? 'Riattiva' : 'Silenzia',
+                message: channel.muted ? l10n.unmuteTooltip : l10n.muteTooltip,
                 child: Switch(
                   value: !channel.muted,
                   onChanged: (_) => onMute(),
@@ -202,7 +212,7 @@ class _ChannelRow extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: 'Rimuovi',
+                tooltip: l10n.removeTooltip,
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline_rounded, size: 19),
               ),

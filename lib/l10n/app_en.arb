@@ -1,0 +1,848 @@
+{
+  "@@locale": "en",
+  "close": "Close",
+  "cancel": "Cancel",
+  "retry": "Retry",
+  "back": "Back",
+  "remove": "Remove",
+  "save": "Save",
+  "done": "Done",
+  "importAction": "Import",
+  "searchAction": "Search",
+  "refreshAction": "Refresh",
+  "addAction": "Add",
+  "playAction": "Play",
+  "disconnect": "Disconnect",
+  "clearSearch": "Clear search",
+  "deviceFallback": "device",
+  "computerNoun": "computer",
+  "phoneNoun": "phone",
+  "onComputer": "on your computer",
+  "onPhone": "on your phone",
+  "fromComputer": "from your computer",
+  "fromPhone": "from your phone",
+  "openOnYouTube": "Open on YouTube",
+  "videoActions": "Video actions",
+  "openChannel": "Open channel",
+  "localFileLabel": "Local file",
+  "relativeNever": "never",
+  "relativeNow": "just now",
+  "relativeYesterday": "yesterday",
+  "relativeMinutes": "{count} min ago",
+  "@relativeMinutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeHours": "{count} h ago",
+  "@relativeHours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeDays": "{count} d ago",
+  "@relativeDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "updatedRelative": "updated {relative}",
+  "@updatedRelative": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "savedRelative": "saved {relative}",
+  "@savedRelative": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "addedRelative": "added {relative}",
+  "@addedRelative": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "openedRelative": "opened {relative}",
+  "@openedRelative": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "navLatest": "Latest",
+  "navNew": "New",
+  "navWatchLater": "Watch later",
+  "navSaved": "Saved",
+  "navLocal": "Local videos",
+  "navRss": "RSS history",
+  "navChannels": "Channels",
+  "navUpdates": "Updates",
+  "navSettings": "Settings",
+  "navImport": "Import",
+  "navSearchChannel": "Search channel",
+  "navMore": "More",
+  "mobileQueueShort": "Later",
+  "openMenu": "Open menu",
+  "closeMenu": "Close menu",
+  "sidebarTagline": "Only what you chose.\nNo recommendations.",
+  "viewLatest": "Latest",
+  "viewNew": "New",
+  "viewWatchLater": "Watch later",
+  "viewSaved": "Saved",
+  "viewLocal": "Local videos",
+  "viewRss": "RSS history",
+  "viewChannels": "Channels",
+  "videosLabel": "{count, plural, =1{1 video} other{{count} videos}}",
+  "@videosLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelsLabel": "{count, plural, =1{1 channel} other{{count} channels}}",
+  "@channelsLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "newLabel": "{count, plural, =1{1 new} other{{count} new}}",
+  "@newLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "subscriptionsLabel": "{count, plural, =1{1 subscription} other{{count} subscriptions}}",
+  "@subscriptionsLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mp4FilesLabel": "{count, plural, =1{1 MP4 file} other{{count} MP4 files}}",
+  "@mp4FilesLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "errorsCount": "{count, plural, =1{1 error} other{{count} errors}}",
+  "@errorsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelsImportedCount": "{count, plural, =1{1 channel imported} other{{count} channels imported}}",
+  "@channelsImportedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "alreadyPresentCount": "{count, plural, =1{1 already present} other{{count} already present}}",
+  "@alreadyPresentCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "videosAddedCount": "{count, plural, =1{1 video added} other{{count} videos added}}",
+  "@videosAddedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "subtitleNew": "{videos} to watch",
+  "@subtitleNew": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleWatchLater": "{videos} to watch",
+  "@subtitleWatchLater": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleSaved": "{videos} offline",
+  "@subtitleSaved": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleLocal": "{files} {location}",
+  "@subtitleLocal": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      },
+      "location": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleRssAll": "{videos} seen in the feed",
+  "@subtitleRssAll": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleRssFiltered": "{videos} · {total} total",
+  "@subtitleRssFiltered": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleChannels": "{subscriptions}",
+  "@subtitleChannels": {
+    "placeholders": {
+      "subscriptions": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleLatest": "{channels} · {newCount}",
+  "@subtitleLatest": {
+    "placeholders": {
+      "channels": {
+        "type": "String"
+      },
+      "newCount": {
+        "type": "String"
+      }
+    }
+  },
+  "markAllRead": "Mark all read",
+  "refreshWithKey": "Refresh (R)",
+  "refreshTooltip": "Refresh",
+  "addVideo": "Add video",
+  "moreActions": "More actions",
+  "searchSubscriptionsHint": "Search subscriptions…",
+  "searchLocalHint": "Search local videos…",
+  "noChannelsImported": "No channels imported.",
+  "noVideosAdded": "No videos added.",
+  "mp4VideoType": "MP4 video",
+  "takeoutCsvType": "Google Takeout CSV",
+  "channelFilterLabel": "Channel",
+  "allChannelsWithCount": "All channels ({count})",
+  "@allChannelsWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "rssChannelSummary": "{channels} · {videos}",
+  "@rssChannelSummary": {
+    "placeholders": {
+      "channels": {
+        "type": "String"
+      },
+      "videos": {
+        "type": "String"
+      }
+    }
+  },
+  "rssSelectedSummary": "{videos} · {channel}",
+  "@rssSelectedSummary": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      },
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyNoResults": "No results",
+  "emptyNoResultsBody": "Try another term. We only search the channels you follow.",
+  "emptyNoResultsLocalBody": "Try another term.",
+  "emptyNoLocalVideos": "No local videos",
+  "emptyNoLocalVideosBody": "Add an MP4 file {fromLocation}. The title comes from the file metadata, or from the file name.",
+  "@emptyNoLocalVideosBody": {
+    "placeholders": {
+      "fromLocation": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyInbox": "Your inbox is empty",
+  "emptyInboxBody": "Import your subscriptions from Google Takeout, or paste a channel handle or URL.",
+  "emptyCaughtUp": "You’re all caught up",
+  "emptyWatchLater": "Watch later is empty",
+  "emptyWatchLaterBodyCompact": "Save a video for later from the row menu (⋮), or open it and use the clock icon.",
+  "emptyWatchLaterBodyDesktop": "Save a video for later with the S key or the clock icon in the video row.",
+  "emptyNoSaved": "No saved videos",
+  "emptyNoSavedBody": "Open a channel and use the download button to watch offline.",
+  "emptyNoVideos": "No videos",
+  "emptyRssBody": "Videos that appear in RSS feeds stay here, without duplicates, even after they leave the latest feed.",
+  "emptyNoNewBody": "No new videos from the channels you follow.",
+  "addMp4Button": "Add MP4 video",
+  "importSubscriptions": "Import subscriptions",
+  "keyboardHint": "R to refresh · / to search",
+  "statusUpdating": "Updating…",
+  "statusUpdated": "Updated {relative}",
+  "@statusUpdated": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "statusShortcuts": "↑↓ · Enter · M · S",
+  "updateAvailableTooltip": "Update available: {version}",
+  "@updateAvailableTooltip": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateNavPrompt": "Update to {version}",
+  "@updateNavPrompt": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsTitle": "Settings",
+  "sectionReading": "Reading",
+  "hideDescriptions": "Hide descriptions",
+  "hideDescriptionsSubtitle": "Show only channel and title. Focus mode.",
+  "sectionUpdate": "Refresh",
+  "refreshEvery": "Every {minutes} minutes",
+  "@refreshEvery": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "rssRefreshNote": "YouTube RSS feeds are free and do not use API quota. Expeditus checks channels on a staggered schedule.",
+  "sectionSponsorBlock": "SponsorBlock",
+  "skipSponsors": "Skip sponsors",
+  "skipSponsorsSubtitle": "Community-reported segments. Direct streams only.",
+  "sponsorCategorySponsor": "Sponsor",
+  "sponsorCategorySelfPromo": "Self-promotion",
+  "sponsorCategoryInteraction": "Like / subscribe",
+  "sponsorCategoryIntro": "Intro",
+  "sponsorCategoryOutro": "Outro",
+  "sponsorCategoryPreview": "Preview",
+  "sponsorCategoryMusicOfftopic": "Non-music section",
+  "sponsorCategoryFiller": "Filler",
+  "sectionHowItWorks": "How it works",
+  "howItWorksBody": "Expeditus does not load the YouTube player. It resolves the video stream and plays it with libmpv: no player ads, no recommendations, no autoplay. SponsorBlock covers sponsors inside the video.",
+  "privacyNote": "Playback depends on YouTube: if a video does not open, use “Open on YouTube”. Subscriptions and state stay {location}; the app contacts YouTube for feeds and GitHub to check releases.",
+  "@privacyNote": {
+    "placeholders": {
+      "location": {
+        "type": "String"
+      }
+    }
+  },
+  "licensesButton": "Open source licenses",
+  "licensesNote": "Licenses for native components (libmpv, ANGLE, SQLite) are available on the licenses page.",
+  "sectionLanguage": "Language",
+  "languageLabel": "App language",
+  "languageSubtitle": "Choose the language used by the interface.",
+  "languageSystem": "System",
+  "languageItalian": "Italiano",
+  "languageEnglish": "English",
+  "languageGerman": "Deutsch",
+  "languageSpanish": "Español",
+  "castTitle": "Cast to device",
+  "castStatusStarting": "Starting playback…",
+  "castStatusPlaying": "Playing on device",
+  "castStatusPaused": "Paused on device",
+  "castStatusStopped": "Connected, waiting to start",
+  "castStatusError": "Error on device",
+  "castStatusIdle": "Connected",
+  "castNoStream": "No stream available for the device.",
+  "castConnectFailed": "Could not connect.",
+  "castSendFailed": "Could not send to device.",
+  "castStartFailed": "Could not start on device.",
+  "castFirewallWarning": "The TV cannot reach the PC. Windows Firewall needs an inbound rule for Expeditus.",
+  "castAllowNetwork": "Allow network access",
+  "castWaitingWindows": "Waiting for Windows confirmation…",
+  "castExplanation": "Videos opened in Expeditus also play on the device. App audio stays muted while casting.",
+  "castDlnaDevices": "DLNA devices",
+  "castSearchAgain": "Search again",
+  "castSearching": "Searching for devices…",
+  "castConnecting": "Connecting to {device}…",
+  "@castConnecting": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "castDiscoveryHintPhone": "Turn on the device and make sure it is on the same local network as the phone.",
+  "castDiscoveryHintDesktop": "Turn on the device and make sure it is on the same local network as the PC. Windows may ask for network access the first time.",
+  "castNoDevicesFound": "No DLNA devices found.",
+  "castNoDevicesAvailable": "No devices available.",
+  "castNetworkPublicWarning": "The Windows network is set to \"Public\", so DLNA discovery is blocked. Set it to \"Private\" to find the TV.",
+  "castMakeNetworkPrivate": "Make network private",
+  "castTroubleshootingTitle": "Discovery tips",
+  "castTroubleshootingStep1": "Turn on the TV and check that it is connected to the same Wi-Fi or LAN as the PC.",
+  "castTroubleshootingStep2": "Make sure the Windows network is \"Private\", not \"Public\" (use the button above to fix it).",
+  "castTroubleshootingStep3": "Check that the TV has its DLNA renderer enabled (e.g. \"Sharing\" or \"Screen Mirroring\").",
+  "castTroubleshootingStep4": "Allow Expeditus network access if Windows Firewall asks for it.",
+  "castStartOnDevice": "Start on device",
+  "castSendingToDevice": "Sending the video to the device…",
+  "castPlaybackNotStarted": "Playback did not start on the device.\nPress play to start.",
+  "castAudioMuted": "Expeditus audio stays muted while casting.",
+  "castFirewallHint": "The TV cannot reach the PC. Allow Expeditus network access in Windows Firewall, then try again.",
+  "castNetworkHint": "If playback does not start, check that the TV and PC are on the same network and that Windows Firewall allows Expeditus local network access.",
+  "castPlayHereOnly": "Play here only",
+  "bookmarkSaved": "Bookmark saved",
+  "localFileNotFound": "Local file not found: {path}",
+  "@localFileNotFound": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "resumedFrom": "Resumed from {time}",
+  "@resumedFrom": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "sponsorSkipped": "Sponsor skipped",
+  "permissionNotGranted": "Permission not granted.",
+  "castStopped": "Casting stopped",
+  "openingFile": "Opening file…",
+  "resolvingStream": "Resolving stream…",
+  "castFooter": "Cast · {device}",
+  "@castFooter": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "castFooterMuted": "Cast · {device} · muted here",
+  "@castFooterMuted": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "playerSpeedMenu": "Speed ({rate})",
+  "@playerSpeedMenu": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "chaptersAndBookmarks": "Chapters and bookmarks",
+  "addBookmark": "Add bookmark",
+  "castedTo": "Casting to {device}",
+  "@castedTo": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "castToDevice": "Cast to device",
+  "markUnwatched": "Mark unwatched",
+  "markWatched": "Mark watched",
+  "removeFromWatchLater": "Remove from Watch later",
+  "openOnYouTubeWithKey": "Open on YouTube (O)",
+  "playbackSpeed": "Playback speed",
+  "markedWatched": "Marked as watched",
+  "markedUnwatched": "Marked as unwatched",
+  "addedToWatchLater": "Added to Watch later",
+  "removedFromWatchLater": "Removed from Watch later",
+  "youtubeVerificationRequired": "YouTube asked for verification. Open the video on YouTube to watch it.",
+  "videoUnavailable": "This video is not available on YouTube.",
+  "noDownloadableFormat": "No downloadable format is available for this video.",
+  "playbackFailed": "Could not play this video. Try again or open it on YouTube.",
+  "playerErrorFileTitle": "File unavailable",
+  "playerErrorStreamTitle": "Stream unavailable",
+  "technicalDetails": "Technical details",
+  "sponsorBlockSegments": "SponsorBlock · {count} segments",
+  "@sponsorBlockSegments": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sponsorBlockCount": "SponsorBlock · {count}",
+  "@sponsorBlockCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sponsorBlockActive": "SponsorBlock active",
+  "seekBack10": "Back 10 s",
+  "seekForward10": "Forward 10 s",
+  "seekBack10Key": "Back 10 s (←)",
+  "seekForward10Key": "Forward 10 s (→)",
+  "offlineLabel": "Offline",
+  "localFileMp4": "Local file · MP4",
+  "offlineMp4": "Offline · MP4",
+  "directStreamQuality": "Direct stream · {quality}",
+  "@directStreamQuality": {
+    "placeholders": {
+      "quality": {
+        "type": "String"
+      }
+    }
+  },
+  "bookmarkAt": "Bookmark at {time}",
+  "@bookmarkAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "addNote": "Add note",
+  "chapters": "Chapters",
+  "bookmarks": "Bookmarks",
+  "noBookmarks": "No bookmarks. Add a note at the current position.",
+  "deleteBookmark": "Delete bookmark",
+  "bookmarkDialogTitle": "Bookmark",
+  "noteHint": "Personal note…",
+  "tabVideos": "Videos",
+  "tabHistory": "History",
+  "errorTitle": "Error",
+  "channelSummary": "{videos} · {lastSync}",
+  "@channelSummary": {
+    "placeholders": {
+      "videos": {
+        "type": "String"
+      },
+      "lastSync": {
+        "type": "String"
+      }
+    }
+  },
+  "channelMutedSuffix": " · RSS muted",
+  "channelHiddenSuffix": " · hidden from new",
+  "refreshOnlyChannel": "Refresh only this channel",
+  "loadingTags": "Loading tags…",
+  "searchChannelHint": "Search this channel, including tags…",
+  "muteRssTooltip": "Mute RSS: no new videos will be suggested. Archive and history remain available.",
+  "unmuteRssTooltip": "Turn RSS back on: new videos will be suggested again.",
+  "rssMuted": "RSS muted",
+  "muteRss": "Mute RSS",
+  "hideFromLatestTooltip": "Hide this channel’s latest video from the new list.",
+  "showInLatestTooltip": "Show this channel’s latest video in the new list.",
+  "showInLatest": "Show in new",
+  "defaultRateTooltip": "Default speed when you open this channel’s videos.",
+  "channelRateTooltip": "Channel default speed",
+  "global": "Global",
+  "globalRate": "Global speed",
+  "channelRate": "Speed {rate}",
+  "@channelRate": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "filterAll": "All",
+  "filterUnwatched": "Unwatched",
+  "filterWatched": "Watched",
+  "filterWatchLater": "Watch later",
+  "emptyMutedTitle": "RSS muted",
+  "emptyMutedBody": "New videos are not suggested. Turn RSS back on from the button above to see them.",
+  "emptyChannelVideosTitle": "No videos",
+  "emptyChannelVideosBody": "This channel has no videos in the current RSS feed.",
+  "emptyFilterTitle": "No results",
+  "emptyFilterBody": "No videos match the filter or search term.",
+  "emptyHistoryTitle": "History is empty",
+  "emptyHistoryBody": "Videos you open or mark as watched will appear here.",
+  "emptyHistorySearchBody": "No history videos match the search term.",
+  "badgeWatched": "Watched",
+  "watchAction": "Watch",
+  "saveOffline": "Save offline",
+  "removeDownload": "Remove download",
+  "noChannelsTitle": "No channels",
+  "noChannelsBody": "Import your subscriptions to get started.",
+  "deleteChannelTitle": "Remove channel?",
+  "deleteChannelBody": "{name} will be removed from Expeditus. Saved videos will be deleted.",
+  "@deleteChannelBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unmuteTooltip": "Resume",
+  "muteTooltip": "Mute",
+  "removeTooltip": "Remove",
+  "noChannelFound": "No channels found for “{query}”.",
+  "@noChannelFound": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAddedFeedUpdating": "{name} added. The feed is updating.",
+  "@channelAddedFeedUpdating": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAddedFeedFailed": "Channel added, but the feed could not be updated: {error}",
+  "@channelAddedFeedFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "searchRateLimited": "YouTube limited the search. Try again shortly.",
+  "searchChannelPlaceholder": "Search for a channel…",
+  "searchExplanationPhone": "Search queries YouTube. Then add the channel with a tap.",
+  "searchExplanationDesktop": "Search queries YouTube. Then add the channel with a click.",
+  "searchingChannels": "Searching channels…",
+  "searchPrompt": "Type a word and press Search.",
+  "alreadySubscribed": "Already added",
+  "addChannel": "Add",
+  "importSubscriptionsTitle": "Import subscriptions",
+  "importIntro": "No Google login needed. Takeout is the cleanest way: Download data → YouTube → subscriptions.csv.",
+  "tabTakeout": "Takeout",
+  "tabPaste": "Paste",
+  "tabSearch": "Search",
+  "tabLink": "Link",
+  "importingEllipsis": "Importing…",
+  "noLoginNote": "No login. Channel search queries YouTube.",
+  "csvSelectTitle": "Select subscriptions.csv",
+  "csvSelectBody": "The file Google prepares in Takeout contains the ID, URL and name of each channel.",
+  "chooseCsvFile": "Choose CSV file",
+  "pasteInstructions": "One channel per line: handle, URL or ID.",
+  "importButton": "Import",
+  "importStatusResolvingChannels": "Resolving channels…",
+  "importStatusResolvingProgress": "Resolving {current}/{total}…",
+  "@importStatusResolvingProgress": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "importStatusImporting": "Importing…",
+  "videoLinkIntro": "Paste a YouTube video link. Expeditus finds the channel, subscribes automatically, and saves the video to Watch later.",
+  "videoLinkAdded": "Added “{video}” and subscribed to {channel}. The video is in Watch later.",
+  "@videoLinkAdded": {
+    "placeholders": {
+      "video": {
+        "type": "String"
+      },
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "addAndSubscribe": "Add and subscribe",
+  "welcomeTitle": "Welcome.",
+  "welcomeBody": "Search for a channel by name to get started. You can also paste a channel or video link, or import subscriptions from Google Takeout.",
+  "welcomePhilosophy": "Expeditus shows only the latest video from each channel: no recommendations, no autoplay, no noise.",
+  "welcomeImportTakeout": "Import from Google Takeout",
+  "welcomeAddVideoLink": "Add a video from a link",
+  "welcomeSkip": "Skip for now",
+  "welcomeSearchHeading": "Search for a channel",
+  "welcomeSearchHeadingCompact": "Or search for a channel",
+  "updatesTitle": "Updates",
+  "installedVersion": "Installed",
+  "availableVersion": "Available",
+  "latestRelease": "Latest release",
+  "downloadInstaller": "Download installer",
+  "openRelease": "Open release",
+  "checkNow": "Check now",
+  "skipVersion": "Skip this version",
+  "releasePage": "Release page",
+  "installerNote": "After downloading, close Expeditus and run the installer.",
+  "releasePageNote": "Open the release page to download the latest version.",
+  "skippedVersion": "You skipped version {version}. The next release will be offered.",
+  "@skippedVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "restore": "Restore",
+  "notCheckedTitle": "No recent check. Check now for a new version.",
+  "upToDate": "Expeditus is up to date.",
+  "upToDateCached": "Expeditus is up to date (cached data).",
+  "lastCheckNever": "Never checked",
+  "lastCheck": "Last check: {relative}",
+  "@lastCheck": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "lastCheckCached": "Last check: {relative} · cached data",
+  "@lastCheckCached": {
+    "placeholders": {
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "updateCheckFailed": "Update check failed.",
+  "updateCheckFailedDetails": "Update check failed: {details}",
+  "@updateCheckFailedDetails": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "updateStateSaveFailed": "Could not save the update state: {details}",
+  "@updateStateSaveFailed": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "updateSkipSaveFailed": "Could not save the skipped version: {details}",
+  "@updateSkipSaveFailed": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "updateRestoreFailed": "Could not restore the skipped version: {details}",
+  "@updateRestoreFailed": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "startupFailed": "Expeditus could not start",
+  "detailsLabel": "Details:",
+  "removeFromList": "Remove from list",
+  "castConnectFailedDetails": "Could not connect to {device}: {details}",
+  "castSendFailedDetails": "Could not send to {device}: {details}",
+  "castActionFailedDetails": "Device action failed: {details}",
+  "castDiscoveryFailedDetails": "Device search failed: {details}",
+  "castUnresponsive": "The device is no longer responding. Check that it is still on and on the same network.",
+  "castFirewallDenied": "Network access not granted. Add an inbound rule for Expeditus in Windows Firewall.",
+  "castNetworkProfileFailed": "Could not change the network type. Open Settings > Network & Internet and set the network to “Private”.",
+  "@castConnectFailedDetails": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "@castSendFailedDetails": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "@castActionFailedDetails": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "@castDiscoveryFailedDetails": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "updateErrorNetwork": "Could not contact the update server. Check your connection and try again.",
+  "updateErrorRateLimited": "Too many update requests. Try again later.",
+  "updateErrorUnauthorized": "The update server refused the request.",
+  "updateErrorNotFound": "No release found. The repository may not have any published releases yet.",
+  "updateErrorInvalidFeed": "The update server returned an invalid response.",
+  "updateErrorServer": "The update server returned an error ({status}).",
+  "@updateErrorServer": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "localVideoLabel": "Local video",
+  "channelsNotUpdated": "{count, plural, =1{1 channel not updated} other{{count} channels not updated}}",
+  "@channelsNotUpdated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "audioOnlyQuality": "Audio only",
+  "castDiscoveryFailed": "Device search failed.",
+  "castActionFailed": "Device action failed."
+}

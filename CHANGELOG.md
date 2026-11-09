@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0
+
+### Added
+
+- Localized interface in Italian, English, German, and Spanish, with an
+  in-app language selector (including a "System" option) and persisted
+  preference.
+- Localized dates, relative times, plurals, update/cast errors, and all
+  remaining UI copy.
+
 ## 2.3.2
 
 Pipeline di release senza job di test.

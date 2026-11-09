@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../theme.dart';
+import '../util/l10n.dart';
 
 /// Poster shown over the muted local video while the renderer has not
 /// confirmed playback yet. It keeps the thumbnail and a play symbol visible so
@@ -32,6 +33,7 @@ class CastWaitingCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ColoredBox(
       color: Colors.black.withValues(alpha: 0.86),
       child: Center(
@@ -84,7 +86,7 @@ class CastWaitingCover extends StatelessWidget {
                                   ),
                                 IconButton.filled(
                                   key: const Key('cast-play-button'),
-                                  tooltip: 'Avvia sul dispositivo',
+                                  tooltip: l10n.castStartOnDevice,
                                   onPressed: starting
                                       ? null
                                       : () => unawaited(onPlay()),
@@ -138,9 +140,8 @@ class CastWaitingCover extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   starting
-                      ? 'Invio del video al dispositivo…'
-                      : 'Riproduzione non avviata sul dispositivo.\n'
-                            'Premi play per iniziare.',
+                      ? l10n.castSendingToDevice
+                      : l10n.castPlaybackNotStarted,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: ExpeditusColors.textDim,
@@ -150,8 +151,7 @@ class CastWaitingCover extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'L\'audio di Expeditus resta disattivato durante la '
-                  'trasmissione.',
+                  l10n.castAudioMuted,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: ExpeditusColors.muted,
@@ -162,13 +162,8 @@ class CastWaitingCover extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     firewallRequired
-                        ? 'La TV non riesce a contattare il PC. Consenti a '
-                              'Expeditus l\'accesso alla rete in Windows '
-                              'Firewall, poi riprova.'
-                        : 'Se non parte, verifica che TV e PC siano sulla '
-                              'stessa rete e che il firewall di Windows '
-                              'consenta a Expeditus l\'accesso alla rete '
-                              'locale.',
+                        ? l10n.castFirewallHint
+                        : l10n.castNetworkHint,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: firewallRequired
@@ -195,8 +190,8 @@ class CastWaitingCover extends StatelessWidget {
                         : const Icon(Icons.shield_outlined, size: 17),
                     label: Text(
                       firewallBusy
-                          ? 'Attesa conferma Windows…'
-                          : 'Consenti accesso rete',
+                          ? l10n.castWaitingWindows
+                          : l10n.castAllowNetwork,
                     ),
                   ),
                 ],
@@ -205,7 +200,7 @@ class CastWaitingCover extends StatelessWidget {
                   key: const Key('cast-use-local'),
                   onPressed: () => unawaited(onUseLocal()),
                   icon: const Icon(Icons.volume_up_rounded, size: 16),
-                  label: const Text('Riproduci solo qui'),
+                  label: Text(l10n.castPlayHereOnly),
                 ),
               ],
             ),

@@ -4,36 +4,38 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/l10n.dart';
 
 Future<String?> showBookmarkNoteDialog(
   BuildContext context, {
   String initialNote = '',
 }) {
   final controller = TextEditingController(text: initialNote);
+  final l10n = context.l10n;
   return showDialog<String>(
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
         backgroundColor: ExpeditusColors.surface,
-        title: const Text('Segnalibro'),
+        title: Text(l10n.bookmarkDialogTitle),
         content: TextField(
           key: const Key('bookmark-note-field'),
           controller: controller,
           autofocus: true,
           maxLines: 3,
           style: const TextStyle(fontSize: 13),
-          decoration: const InputDecoration(hintText: 'Nota personale…'),
+          decoration: InputDecoration(hintText: l10n.noteHint),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Annulla'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             key: const Key('bookmark-note-save'),
             onPressed: () =>
                 Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('Salva'),
+            child: Text(l10n.save),
           ),
         ],
       );
@@ -100,6 +102,7 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.75;
     return Dialog(
       key: const Key('outline-dialog'),
@@ -114,10 +117,10 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Capitoli e segnalibri',
-                      style: TextStyle(
+                      l10n.chaptersAndBookmarks,
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
@@ -147,7 +150,9 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Segnalibro a ${formatDuration(widget.position.inSeconds)}',
+                            l10n.bookmarkAt(
+                              formatDuration(widget.position.inSeconds),
+                            ),
                             style: const TextStyle(
                               color: ExpeditusColors.muted,
                               fontSize: 11.5,
@@ -157,13 +162,13 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
                         TextButton(
                           key: const Key('outline-add-bookmark'),
                           onPressed: _addBookmark,
-                          child: const Text('Aggiungi nota'),
+                          child: Text(l10n.addNote),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
                     if (widget.chapters.isNotEmpty) ...[
-                      const _SectionLabel('Capitoli'),
+                      _SectionLabel(l10n.chapters),
                       const SizedBox(height: 4),
                       for (var i = 0; i < widget.chapters.length; i++)
                         ListTile(
@@ -182,12 +187,11 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
                             widget.chapters[i].title,
                             style: const TextStyle(fontSize: 13),
                           ),
-                          onTap: () =>
-                              _seekTo(widget.chapters[i].startSeconds),
+                          onTap: () => _seekTo(widget.chapters[i].startSeconds),
                         ),
                       const SizedBox(height: 10),
                     ],
-                    const _SectionLabel('Segnalibri'),
+                    _SectionLabel(l10n.bookmarks),
                     const SizedBox(height: 4),
                     if (_loading)
                       const Padding(
@@ -201,11 +205,11 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
                         ),
                       )
                     else if (_bookmarks.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         child: Text(
-                          'Nessun segnalibro. Aggiungi una nota al punto corrente.',
-                          style: TextStyle(
+                          l10n.noBookmarks,
+                          style: const TextStyle(
                             color: ExpeditusColors.muted,
                             fontSize: 12,
                           ),
@@ -231,7 +235,7 @@ class _VideoOutlineDialogState extends State<VideoOutlineDialog> {
                           ),
                           onTap: () => _seekTo(bookmark.positionSeconds),
                           trailing: IconButton(
-                            tooltip: 'Elimina segnalibro',
+                            tooltip: l10n.deleteBookmark,
                             onPressed: () => _deleteBookmark(bookmark),
                             icon: const Icon(
                               Icons.delete_outline_rounded,

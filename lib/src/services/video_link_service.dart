@@ -12,7 +12,7 @@ class LinkedVideo {
 /// Resolves a YouTube video URL/ID and returns the video plus its channel.
 class VideoLinkService {
   VideoLinkService({YoutubeExplode? youtube})
-      : _youtube = youtube ?? YoutubeExplode();
+    : _youtube = youtube ?? YoutubeExplode();
 
   final YoutubeExplode _youtube;
   bool _closed = false;
@@ -21,7 +21,7 @@ class VideoLinkService {
     if (_closed) throw StateError('Video link service is closed');
     final trimmed = input.trim();
     if (trimmed.isEmpty) {
-      throw const FormatException('Inserisci un link video.');
+      throw const FormatException('Enter a video link.');
     }
 
     final video = await _youtube.videos.get(trimmed);
@@ -29,10 +29,7 @@ class VideoLinkService {
     final keywords = video.keywords.toList();
 
     return LinkedVideo(
-      channel: ImportedChannel(
-        id: video.channelId.value,
-        title: video.author,
-      ),
+      channel: ImportedChannel(id: video.channelId.value, title: video.author),
       video: VideoItem(
         id: video.id.value,
         channelId: video.channelId.value,

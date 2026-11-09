@@ -39,7 +39,7 @@ class DlnaDevice {
     if (name.isNotEmpty) return name;
     final model = modelName.trim();
     if (model.isNotEmpty) return model;
-    return udn.trim().isNotEmpty ? udn.trim() : 'Dispositivo DLNA';
+    return udn.trim();
   }
 
   String get descriptor => modelName.trim().isEmpty ? udn : modelName.trim();

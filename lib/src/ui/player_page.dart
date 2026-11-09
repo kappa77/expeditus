@@ -12,7 +12,10 @@ import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../state/cast_controller.dart';
 import '../theme.dart';
+import '../../l10n/generated/app_localizations.dart';
+import '../util/cast_error_text.dart';
 import '../util/format.dart';
+import '../util/l10n.dart';
 import '../util/platform.dart';
 import '../util/playback_rates.dart';
 import '../util/seek_accumulator.dart';
@@ -134,7 +137,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     );
     widget.state.castController.addListener(_onCastChanged);
 
-    unawaited(_open());
+    // Accessing localizations is not allowed before the first build, and
+    // _open needs the current locale for its user-facing labels.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_open());
+    });
     unawaited(_loadChapters());
   }
 
@@ -200,10 +207,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       _player.state.position.inSeconds,
       note,
     );
-    _toast('Segnalibro salvato');
+    if (mounted) _toast(context.l10n.bookmarkSaved);
   }
 
   Future<void> _open() async {
+    final l10n = context.l10n;
     try {
       Uri? mediaUri;
       String? quality;
@@ -215,21 +223,25 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         final localFile = File(localPath);
         if (await localFile.exists()) {
           mediaUri = Uri.file(localFile.path);
-          quality = widget.video.isLocal ? 'File locale' : 'Offline';
+          quality = widget.video.isLocal
+              ? l10n.localFileLabel
+              : l10n.offlineLabel;
           kind = 'file';
           localPathUsed = localFile.path;
         }
       }
 
       if (mediaUri == null && widget.video.isLocal) {
-        throw Exception('File locale non trovato: $localPath');
+        throw Exception(l10n.localFileNotFound(localPath ?? ''));
       }
 
       if (mediaUri == null) {
         final resolve = widget.resolver ?? StreamResolver.resolve;
         final stream = await resolve(widget.video.id);
         mediaUri = stream.url;
-        quality = stream.quality;
+        quality = stream.kind == 'audio'
+            ? l10n.audioOnlyQuality
+            : stream.quality;
         kind = stream.kind;
       }
 
@@ -248,7 +260,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         final total = _player.state.duration;
         if (total == Duration.zero || saved < total.inSeconds - 10) {
           await _player.seek(Duration(seconds: saved));
-          if (mounted) _toast('Ripreso da ${formatDuration(saved)}');
+          if (mounted) _toast(l10n.resumedFrom(formatDuration(saved)));
         }
       }
       setState(() => _ready = true);
@@ -272,7 +284,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = _friendlyError(e);
+          _error = _friendlyError(e, context.l10n);
           _errorDetails = e.toString().replaceFirst('Exception: ', '');
         });
       }
@@ -327,7 +339,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           if (cast.isCasting && _castMuted) {
             unawaited(cast.seekTo(segment.end));
           }
-          _toast('Sponsor saltato');
+          _toast(context.l10n.sponsorSkipped);
         }
         break;
       }
@@ -364,7 +376,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         unawaited(_player.play());
       }
     }
-    final castError = cast.error;
+    final failure = cast.error;
+    final castError = failure == null
+        ? null
+        : castFailureText(context.l10n, failure);
     if (castError != null && castError != _lastCastError) {
       _lastCastError = castError;
       if (_castMuted) {
@@ -373,7 +388,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         _toast(
           castError,
           action: SnackBarAction(
-            label: 'Riprova',
+            label: context.l10n.retry,
             onPressed: () => unawaited(_startCasting()),
           ),
         );
@@ -450,13 +465,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         await _restoreLocalAudio();
         return;
       }
-      final message = cast.error ?? 'Invio al dispositivo non riuscito.';
+      final failure = cast.error;
+      final message = failure == null
+          ? context.l10n.castSendFailed
+          : castFailureText(context.l10n, failure);
       if (_lastCastError != message) {
         _lastCastError = message;
         _toast(
           message,
           action: SnackBarAction(
-            label: 'Riprova',
+            label: context.l10n.retry,
             onPressed: () => unawaited(_startCasting()),
           ),
         );
@@ -468,6 +486,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   /// Resumes playback on the renderer after the user pressed the poster's
   /// play button, or retries the whole handshake after an error.
   Future<void> _resumeCasting() async {
+    final l10n = context.l10n;
     final cast = widget.state.castController;
     if (!mounted || !cast.isConnected) return;
     if (cast.playback == CastPlaybackState.error ||
@@ -495,7 +514,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     final ok = await cast.play();
     if (!mounted) return;
     if (!ok) {
-      final message = cast.error ?? 'Avvio sul dispositivo non riuscito.';
+      final failure = cast.error;
+      final message = failure == null
+          ? l10n.castStartFailed
+          : castFailureText(l10n, failure);
       if (!cast.isConnected) {
         await _restoreLocalAudio();
       }
@@ -504,7 +526,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         _toast(
           message,
           action: SnackBarAction(
-            label: 'Riprova',
+            label: l10n.retry,
             onPressed: () => unawaited(_startCasting()),
           ),
         );
@@ -534,7 +556,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     final allowed = await cast.allowFirewall();
     if (!mounted) return;
     if (!allowed) {
-      final message = cast.error ?? 'Permesso non concesso.';
+      final failure = cast.error;
+      final message = failure == null
+          ? context.l10n.permissionNotGranted
+          : castFailureText(context.l10n, failure);
       if (_lastCastError != message) {
         _lastCastError = message;
         _toast(message);
@@ -547,7 +572,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Future<void> _useLocalOnly() async {
     await widget.state.castController.disconnect();
     await _restoreLocalAudio();
-    if (mounted) _toast('Trasmissione interrotta');
+    if (mounted) _toast(context.l10n.castStopped);
   }
 
   Future<void> _retry() async {
@@ -689,8 +714,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             const SizedBox(height: 14),
             Text(
               widget.video.isLocal
-                  ? 'Apertura del file…'
-                  : 'Risoluzione dello stream…',
+                  ? context.l10n.openingFile
+                  : context.l10n.resolvingStream,
               style: const TextStyle(
                 color: ExpeditusColors.muted,
                 fontSize: 12,
@@ -746,7 +771,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           Positioned.fill(
             child: CastWaitingCover(
               video: widget.video,
-              deviceName: cast.connectedDeviceName ?? 'Dispositivo',
+              deviceName:
+                  cast.connectedDeviceName ?? context.l10n.deviceFallback,
               starting: cast.playback == CastPlaybackState.starting,
               firewallRequired: cast.firewallRequired,
               firewallBusy: cast.firewallBusy,
@@ -784,8 +810,15 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   compact: compact,
                   quality: _quality,
                   castStatus: cast.isConnected
-                      ? 'Cast · ${cast.connectedDeviceName ?? 'dispositivo'}'
-                            '${_castMuted ? ' · muto qui' : ''}'
+                      ? _castMuted
+                            ? context.l10n.castFooterMuted(
+                                cast.connectedDeviceName ??
+                                    context.l10n.deviceFallback,
+                              )
+                            : context.l10n.castFooter(
+                                cast.connectedDeviceName ??
+                                    context.l10n.deviceFallback,
+                              )
                       : null,
                   position: _uiPosition.value,
                   duration: _uiDuration.value,
@@ -822,14 +855,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           ? [
               PopupMenuButton<_PlayerAction>(
                 key: const Key('player-menu'),
-                tooltip: 'Azioni video',
+                tooltip: context.l10n.videoActions,
                 onSelected: _onPlayerAction,
                 itemBuilder: (context) => [
                   PopupMenuItem(
                     value: _PlayerAction.speed,
                     child: _menuRow(
                       Icons.speed_rounded,
-                      'Velocità (${_rate.toStringAsFixed(2)}×)',
+                      context.l10n.playerSpeedMenu(
+                        '${_rate.toStringAsFixed(2)}×',
+                      ),
                     ),
                   ),
                   if (!local)
@@ -837,7 +872,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                       value: _PlayerAction.chapters,
                       child: _menuRow(
                         Icons.format_list_bulleted_rounded,
-                        'Capitoli e segnalibri',
+                        context.l10n.chaptersAndBookmarks,
                       ),
                     ),
                   if (!local)
@@ -845,7 +880,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                       value: _PlayerAction.bookmark,
                       child: _menuRow(
                         Icons.bookmark_add_outlined,
-                        'Aggiungi segnalibro',
+                        context.l10n.addBookmark,
                       ),
                     ),
                   if (supportsDlnaCast)
@@ -854,8 +889,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                       child: _menuRow(
                         Icons.cast_rounded,
                         cast.isConnected
-                            ? 'Trasmesso su ${cast.connectedDeviceName ?? 'dispositivo'}'
-                            : 'Trasmetti su dispositivo',
+                            ? context.l10n.castedTo(
+                                cast.connectedDeviceName ??
+                                    context.l10n.deviceFallback,
+                              )
+                            : context.l10n.castToDevice,
                       ),
                     ),
                   if (!local)
@@ -865,7 +903,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                         _watched
                             ? Icons.check_circle_rounded
                             : Icons.check_circle_outline_rounded,
-                        _watched ? 'Segna da vedere' : 'Segna visto',
+                        _watched
+                            ? context.l10n.markUnwatched
+                            : context.l10n.markWatched,
                       ),
                     ),
                   if (!local)
@@ -876,8 +916,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                             ? Icons.watch_later_rounded
                             : Icons.watch_later_outlined,
                         _queued
-                            ? 'Rimuovi da Guarda più tardi'
-                            : 'Guarda più tardi',
+                            ? context.l10n.removeFromWatchLater
+                            : context.l10n.navWatchLater,
                       ),
                     ),
                   if (!local)
@@ -885,7 +925,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                       value: _PlayerAction.external,
                       child: _menuRow(
                         Icons.open_in_new_rounded,
-                        'Apri su YouTube',
+                        context.l10n.openOnYouTube,
                       ),
                     ),
                 ],
@@ -897,8 +937,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 IconButton(
                   key: const Key('cast-button'),
                   tooltip: cast.isConnected
-                      ? 'Trasmesso su ${cast.connectedDeviceName ?? 'dispositivo'}'
-                      : 'Trasmetti su dispositivo',
+                      ? context.l10n.castedTo(
+                          cast.connectedDeviceName ??
+                              context.l10n.deviceFallback,
+                        )
+                      : context.l10n.castToDevice,
                   onPressed: _openCastDialog,
                   icon: Icon(
                     cast.isConnected
@@ -910,20 +953,20 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
               if (!local) ...[
                 IconButton(
                   key: const Key('chapters-button'),
-                  tooltip: 'Capitoli e segnalibri',
+                  tooltip: context.l10n.chaptersAndBookmarks,
                   onPressed: _showOutline,
                   icon: const Icon(Icons.format_list_bulleted_rounded),
                 ),
                 IconButton(
                   key: const Key('bookmark-add-button'),
-                  tooltip: 'Aggiungi segnalibro con nota',
+                  tooltip: context.l10n.addBookmark,
                   onPressed: _addBookmark,
                   icon: const Icon(Icons.bookmark_add_outlined),
                 ),
               ],
               PopupMenuButton<double>(
                 key: const Key('speed-button'),
-                tooltip: 'Velocità di riproduzione',
+                tooltip: context.l10n.playbackSpeed,
                 initialValue: _rate,
                 onOpened: () => _speedMenuOpen = true,
                 onCanceled: () => _speedMenuOpen = false,
@@ -956,7 +999,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
               ),
               if (!local) ...[
                 IconButton(
-                  tooltip: _watched ? 'Segna da vedere' : 'Segna visto',
+                  tooltip: _watched
+                      ? context.l10n.markUnwatched
+                      : context.l10n.markWatched,
                   onPressed: _toggleWatched,
                   icon: Icon(
                     _watched
@@ -969,8 +1014,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 ),
                 IconButton(
                   tooltip: _queued
-                      ? 'Rimuovi da Guarda più tardi'
-                      : 'Guarda più tardi',
+                      ? context.l10n.removeFromWatchLater
+                      : context.l10n.navWatchLater,
                   onPressed: _toggleQueued,
                   icon: Icon(
                     _queued
@@ -982,7 +1027,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Apri su YouTube (O)',
+                  tooltip: context.l10n.openOnYouTubeWithKey,
                   onPressed: _openExternal,
                   icon: const Icon(Icons.open_in_new_rounded),
                 ),
@@ -1033,11 +1078,14 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: Text(
-                  'Velocità di riproduzione',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  context.l10n.playbackSpeed,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               for (final rate in playbackRates)
@@ -1062,14 +1110,18 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   void _toggleWatched() {
     setState(() => _watched = !_watched);
     unawaited(widget.state.toggleWatched(widget.video));
-    _toast(_watched ? 'Segnato come visto' : 'Segnato da vedere');
+    _toast(
+      _watched ? context.l10n.markedWatched : context.l10n.markedUnwatched,
+    );
   }
 
   void _toggleQueued() {
     setState(() => _queued = !_queued);
     unawaited(widget.state.toggleQueued(widget.video));
     _toast(
-      _queued ? 'Aggiunto a Guarda più tardi' : 'Rimosso da Guarda più tardi',
+      _queued
+          ? context.l10n.addedToWatchLater
+          : context.l10n.removedFromWatchLater,
     );
   }
 
@@ -1089,22 +1141,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
   }
 
-  static String _friendlyError(Object error) {
+  static String _friendlyError(Object error, AppLocalizations l10n) {
     final text = error.toString().replaceFirst('Exception: ', '');
     final lower = text.toLowerCase();
     if (lower.contains('sign in') || lower.contains('bot')) {
-      return 'YouTube ha chiesto una verifica. Apri il video su YouTube per guardarlo.';
+      return l10n.youtubeVerificationRequired;
     }
     if (lower.contains('unavailable') ||
         lower.contains('private') ||
         lower.contains('removed') ||
         lower.contains('does not exist')) {
-      return 'Questo video non è disponibile su YouTube.';
+      return l10n.videoUnavailable;
     }
-    if (lower.contains('no muxed stream')) {
-      return 'Nessun formato scaricabile è disponibile per questo video.';
+    if (lower.contains('no muxed stream') ||
+        lower.contains('no playable stream')) {
+      return l10n.noDownloadableFormat;
     }
-    return 'Impossibile riprodurre questo video. Riprova o aprilo su YouTube.';
+    return l10n.playbackFailed;
   }
 }
 
@@ -1125,6 +1178,7 @@ class _PlayerError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -1147,7 +1201,9 @@ class _PlayerError extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  local ? 'File non disponibile' : 'Stream non disponibile',
+                  local
+                      ? l10n.playerErrorFileTitle
+                      : l10n.playerErrorStreamTitle,
                   style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
@@ -1171,9 +1227,9 @@ class _PlayerError extends StatelessWidget {
                     child: ExpansionTile(
                       tilePadding: EdgeInsets.zero,
                       childrenPadding: EdgeInsets.zero,
-                      title: const Text(
-                        'Dettagli tecnici',
-                        style: TextStyle(
+                      title: Text(
+                        l10n.technicalDetails,
+                        style: const TextStyle(
                           color: ExpeditusColors.muted,
                           fontSize: 11.5,
                         ),
@@ -1198,14 +1254,14 @@ class _PlayerError extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: onRetry,
                       icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('Riprova'),
+                      label: Text(l10n.retry),
                     ),
                     if (!local) ...[
                       const SizedBox(width: 10),
                       FilledButton.icon(
                         onPressed: onOpenExternal,
                         icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                        label: const Text('Apri su YouTube'),
+                        label: Text(l10n.openOnYouTube),
                       ),
                     ],
                   ],
@@ -1265,6 +1321,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final video = widget.video;
     final duration = widget.duration;
     final displayedPosition = _dragFraction != null && duration != null
@@ -1303,7 +1360,8 @@ class _PlayerFooterState extends State<_PlayerFooter> {
             children: [
               Flexible(
                 child: Text(
-                  video.channelTitle.toUpperCase(),
+                  (video.isLocal ? l10n.localVideoLabel : video.channelTitle)
+                      .toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1343,10 +1401,10 @@ class _PlayerFooterState extends State<_PlayerFooter> {
               else if (widget.quality != null)
                 Text(
                   video.isLocal
-                      ? 'File locale · MP4'
+                      ? l10n.localFileMp4
                       : video.isDownloaded
-                      ? 'Offline · MP4'
-                      : 'Stream diretto · ${widget.quality}',
+                      ? l10n.offlineMp4
+                      : l10n.directStreamQuality(widget.quality ?? ''),
                   style: const TextStyle(
                     color: ExpeditusColors.muted,
                     fontSize: 10.5,
@@ -1393,6 +1451,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
     double progress,
     Duration? duration,
   ) {
+    final l10n = context.l10n;
     return Column(
       children: [
         Row(
@@ -1441,13 +1500,13 @@ class _PlayerFooterState extends State<_PlayerFooter> {
           children: [
             IconButton(
               key: const Key('seek-back-button'),
-              tooltip: 'Indietro 10 s',
+              tooltip: l10n.seekBack10,
               onPressed: widget.onSeekBack,
               icon: const Icon(Icons.replay_10_rounded, size: 21),
             ),
             IconButton(
               key: const Key('seek-forward-button'),
-              tooltip: 'Avanti 10 s',
+              tooltip: l10n.seekForward10,
               onPressed: widget.onSeekForward,
               icon: const Icon(Icons.forward_10_rounded, size: 21),
             ),
@@ -1456,8 +1515,8 @@ class _PlayerFooterState extends State<_PlayerFooter> {
               Flexible(
                 child: Text(
                   widget.sponsorSegments > 0
-                      ? 'SponsorBlock · ${widget.sponsorSegments}'
-                      : 'SponsorBlock attivo',
+                      ? l10n.sponsorBlockCount(widget.sponsorSegments)
+                      : l10n.sponsorBlockActive,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.right,
@@ -1476,6 +1535,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
   }
 
   Widget _buildDesktopControls(String timeLabel, double progress) {
+    final l10n = context.l10n;
     final video = widget.video;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1515,7 +1575,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
           flex: 1,
           child: IconButton(
             key: const Key('seek-back-button'),
-            tooltip: 'Indietro 10 s (←)',
+            tooltip: l10n.seekBack10Key,
             onPressed: widget.onSeekBack,
             icon: const Icon(Icons.replay_10_rounded, size: 20),
           ),
@@ -1524,7 +1584,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
           flex: 1,
           child: IconButton(
             key: const Key('seek-forward-button'),
-            tooltip: 'Avanti 10 s (→)',
+            tooltip: l10n.seekForward10Key,
             onPressed: widget.onSeekForward,
             icon: const Icon(Icons.forward_10_rounded, size: 20),
           ),
@@ -1537,8 +1597,8 @@ class _PlayerFooterState extends State<_PlayerFooter> {
               child: widget.sponsorEnabled
                   ? Text(
                       widget.sponsorSegments > 0
-                          ? 'SponsorBlock · ${widget.sponsorSegments} segmenti'
-                          : 'SponsorBlock attivo',
+                          ? l10n.sponsorBlockSegments(widget.sponsorSegments)
+                          : l10n.sponsorBlockActive,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1555,7 +1615,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
           Expanded(
             flex: 1,
             child: IconButton(
-              tooltip: widget.watched ? 'Segna da vedere' : 'Segna visto',
+              tooltip: widget.watched ? l10n.markUnwatched : l10n.markWatched,
               onPressed: widget.onToggleWatched,
               icon: Icon(
                 widget.watched
@@ -1572,8 +1632,8 @@ class _PlayerFooterState extends State<_PlayerFooter> {
             flex: 1,
             child: IconButton(
               tooltip: widget.queued
-                  ? 'Rimuovi da Guarda più tardi'
-                  : 'Guarda più tardi',
+                  ? l10n.removeFromWatchLater
+                  : l10n.navWatchLater,
               onPressed: widget.onToggleQueued,
               icon: Icon(
                 widget.queued
@@ -1589,7 +1649,7 @@ class _PlayerFooterState extends State<_PlayerFooter> {
           Expanded(
             flex: 1,
             child: IconButton(
-              tooltip: 'Apri su YouTube',
+              tooltip: l10n.openOnYouTube,
               onPressed: widget.onOpenExternal,
               icon: const Icon(Icons.open_in_new_rounded, size: 17),
             ),

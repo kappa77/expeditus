@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../util/l10n.dart';
 import 'channel_search_tab.dart';
 import 'import_dialog.dart';
 
@@ -20,6 +21,7 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final size = MediaQuery.sizeOf(context);
     final compact = size.width < 700 || size.height < 480;
     return Scaffold(
@@ -60,7 +62,7 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                   SizedBox(height: compact ? 22 : 28),
                   Text(
-                    'Benvenuto.',
+                    l10n.welcomeTitle,
                     style: TextStyle(
                       fontSize: compact ? 28 : 30,
                       fontWeight: FontWeight.w700,
@@ -68,21 +70,18 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Cerca un canale per nome per iniziare. Puoi anche incollare '
-                    'il link di un canale o di un video, oppure importare le '
-                    'iscrizioni da Google Takeout.',
-                    style: TextStyle(
+                  Text(
+                    l10n.welcomeBody,
+                    style: const TextStyle(
                       color: ExpeditusColors.muted,
                       fontSize: 14,
                       height: 1.5,
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Expeditus mostrerà solo l’ultimo video di ogni canale: '
-                    'niente raccomandazioni, niente autoplay, niente rumore.',
-                    style: TextStyle(
+                  Text(
+                    l10n.welcomePhilosophy,
+                    style: const TextStyle(
                       color: ExpeditusColors.muted,
                       fontSize: 12.5,
                       height: 1.45,
@@ -100,22 +99,24 @@ class WelcomeScreen extends StatelessWidget {
                       OutlinedButton.icon(
                         onPressed: () => _openImport(context),
                         icon: const Icon(Icons.file_upload_outlined, size: 17),
-                        label: const Text('Importa da Google Takeout'),
+                        label: Text(l10n.welcomeImportTakeout),
                       ),
                       OutlinedButton.icon(
                         onPressed: () => _openImport(context, tab: 3),
                         icon: const Icon(Icons.link_rounded, size: 17),
-                        label: const Text('Aggiungi un video da link'),
+                        label: Text(l10n.welcomeAddVideoLink),
                       ),
                       TextButton(
                         onPressed: state.completeOnboarding,
-                        child: const Text('Salta per ora'),
+                        child: Text(l10n.welcomeSkip),
                       ),
                     ],
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    compact ? 'Oppure cerca un canale' : 'Cerca un canale',
+                    compact
+                        ? l10n.welcomeSearchHeadingCompact
+                        : l10n.welcomeSearchHeading,
                     style: const TextStyle(
                       color: ExpeditusColors.textDim,
                       fontSize: 12,

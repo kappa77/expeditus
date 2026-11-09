@@ -57,7 +57,7 @@ class AppVersion implements Comparable<AppVersion> {
   static AppVersion parse(String value) {
     final parsed = tryParse(value);
     if (parsed == null) {
-      throw FormatException('Versione non valida: $value');
+      throw FormatException('Invalid version: $value');
     }
     return parsed;
   }

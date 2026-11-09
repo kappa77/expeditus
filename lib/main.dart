@@ -11,6 +11,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/legacy.dart';
 
+import 'l10n/generated/app_localizations.dart';
 import 'src/app.dart';
 import 'src/data/database.dart';
 import 'src/state/app_state.dart';
@@ -19,7 +20,7 @@ import 'src/theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  await initializeDateFormatting('it_IT');
+  await initializeDateFormatting();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -75,47 +76,57 @@ class _FatalErrorApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: expeditusTheme(),
-      home: Scaffold(
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Expeditus non è riuscito ad avviarsi',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '$error',
-                    style: const TextStyle(color: ExpeditusColors.red),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Dettagli:',
-                    style: TextStyle(color: ExpeditusColors.muted),
-                  ),
-                  const SizedBox(height: 4),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Text(
-                        '$stack',
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Builder(
+        builder: (context) {
+          final l10n = AppLocalizations.of(context);
+          return Scaffold(
+            body: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.startupFailed,
                         style: const TextStyle(
-                          color: ExpeditusColors.muted,
-                          fontSize: 11,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '$error',
+                        style: const TextStyle(color: ExpeditusColors.red),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        l10n.detailsLabel,
+                        style: const TextStyle(color: ExpeditusColors.muted),
+                      ),
+                      const SizedBox(height: 4),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Text(
+                            '$stack',
+                            style: const TextStyle(
+                              color: ExpeditusColors.muted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

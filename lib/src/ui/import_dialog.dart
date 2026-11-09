@@ -1,9 +1,12 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
+
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../util/l10n.dart';
 import 'channel_search_tab.dart';
 import 'video_link_tab.dart';
 
@@ -41,8 +44,11 @@ class _ImportDialogState extends State<ImportDialog>
 
   Future<void> _pickCsv() async {
     final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'Google Takeout CSV', extensions: ['csv']),
+      acceptedTypeGroups: [
+        XTypeGroup(
+          label: context.l10n.takeoutCsvType,
+          extensions: const ['csv'],
+        ),
       ],
     );
     if (file == null) return;
@@ -92,6 +98,7 @@ class _ImportDialogState extends State<ImportDialog>
   }
 
   Widget _buildContent(BuildContext context, {required bool compact}) {
+    final l10n = context.l10n;
     return ListenableBuilder(
       listenable: widget.state,
       builder: (context, _) {
@@ -111,17 +118,17 @@ class _ImportDialogState extends State<ImportDialog>
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Importa iscrizioni',
-                        style: TextStyle(
+                        l10n.importSubscriptionsTitle,
+                        style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Chiudi',
+                      tooltip: l10n.close,
                       onPressed: busy
                           ? null
                           : () => Navigator.of(context).pop(),
@@ -130,10 +137,9 @@ class _ImportDialogState extends State<ImportDialog>
                   ],
                 ),
                 const SizedBox(height: 2),
-                const Text(
-                  'Non serve accedere a Google. Takeout è il modo più pulito: '
-                  'Scarica i dati → YouTube → subscriptions.csv.',
-                  style: TextStyle(
+                Text(
+                  l10n.importIntro,
+                  style: const TextStyle(
                     color: ExpeditusColors.muted,
                     fontSize: 12.5,
                     height: 1.45,
@@ -145,11 +151,11 @@ class _ImportDialogState extends State<ImportDialog>
                   labelColor: ExpeditusColors.accent,
                   unselectedLabelColor: ExpeditusColors.muted,
                   indicatorColor: ExpeditusColors.accent,
-                  tabs: const [
-                    Tab(text: 'Takeout'),
-                    Tab(text: 'Incolla'),
-                    Tab(text: 'Cerca'),
-                    Tab(text: 'Link'),
+                  tabs: [
+                    Tab(text: l10n.tabTakeout),
+                    Tab(text: l10n.tabPaste),
+                    Tab(text: l10n.tabSearch),
+                    Tab(text: l10n.tabLink),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -173,7 +179,7 @@ class _ImportDialogState extends State<ImportDialog>
                   const LinearProgressIndicator(minHeight: 2),
                   const SizedBox(height: 8),
                   Text(
-                    widget.state.importStatus ?? 'Importazione…',
+                    _importStatusLabel(widget.state, l10n),
                     style: const TextStyle(
                       color: ExpeditusColors.muted,
                       fontSize: 11.5,
@@ -189,10 +195,10 @@ class _ImportDialogState extends State<ImportDialog>
                       color: ExpeditusColors.muted,
                     ),
                     const SizedBox(width: 5),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Nessun login. La ricerca canali interroga YouTube.',
-                        style: TextStyle(
+                        l10n.noLoginNote,
+                        style: const TextStyle(
                           color: ExpeditusColors.muted,
                           fontSize: 11,
                         ),
@@ -202,7 +208,7 @@ class _ImportDialogState extends State<ImportDialog>
                       onPressed: busy
                           ? null
                           : () => Navigator.of(context).pop(),
-                      child: const Text('Chiudi'),
+                      child: Text(l10n.close),
                     ),
                   ],
                 ),
@@ -212,6 +218,19 @@ class _ImportDialogState extends State<ImportDialog>
         );
       },
     );
+  }
+
+  static String _importStatusLabel(AppState state, AppLocalizations l10n) {
+    return switch (state.importPhase) {
+      ImportPhase.resolving when state.importTotal > 0 =>
+        l10n.importStatusResolvingProgress(
+          state.importCurrent,
+          state.importTotal,
+        ),
+      ImportPhase.resolving => l10n.importStatusResolvingChannels,
+      ImportPhase.importing => l10n.importStatusImporting,
+      ImportPhase.idle => l10n.importingEllipsis,
+    };
   }
 }
 
@@ -223,6 +242,7 @@ class _CsvTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -232,15 +252,15 @@ class _CsvTab extends StatelessWidget {
           color: ExpeditusColors.muted,
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Seleziona subscriptions.csv',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        Text(
+          l10n.csvSelectTitle,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Il file che Google prepara in Takeout contiene\nID, URL e nome di ogni canale.',
+        Text(
+          l10n.csvSelectBody,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: ExpeditusColors.muted,
             fontSize: 12,
             height: 1.45,
@@ -251,7 +271,7 @@ class _CsvTab extends StatelessWidget {
           key: const Key('import-csv'),
           onPressed: busy ? null : onPick,
           icon: const Icon(Icons.folder_open_rounded, size: 18),
-          label: const Text('Scegli file CSV'),
+          label: Text(l10n.chooseCsvFile),
         ),
       ],
     );
@@ -271,12 +291,13 @@ class _PasteTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'Un canale per riga: handle, URL o ID.',
-          style: TextStyle(color: ExpeditusColors.muted, fontSize: 12),
+        Text(
+          l10n.pasteInstructions,
+          style: const TextStyle(color: ExpeditusColors.muted, fontSize: 12),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -303,7 +324,7 @@ class _PasteTab extends StatelessWidget {
             key: const Key('import-submit'),
             onPressed: busy ? null : onSubmit,
             icon: const Icon(Icons.download_rounded, size: 18),
-            label: const Text('Importa'),
+            label: Text(l10n.importButton),
           ),
         ),
       ],

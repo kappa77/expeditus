@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
+
 import '../models.dart';
 import '../services/channel_search_service.dart';
 import '../state/app_state.dart';
 import '../util/platform.dart';
 import '../theme.dart';
+import '../util/l10n.dart';
 
 class ChannelSearchTab extends StatefulWidget {
   const ChannelSearchTab({super.key, required this.state});
@@ -58,14 +61,14 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
         _results = results;
         _loading = false;
         if (results.isEmpty) {
-          _message = 'Nessun canale trovato per “$query”.';
+          _message = context.l10n.noChannelFound(query);
         }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = _friendlyError(e);
+        _error = _friendlyError(e, context.l10n);
       });
     }
   }
@@ -83,24 +86,25 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
     setState(() {
       _addingId = null;
       if (error == null) {
-        _message = '${result.name} aggiunto. Il feed si aggiorna.';
+        _message = context.l10n.channelAddedFeedUpdating(result.name);
       } else {
-        _error = 'Canale aggiunto, ma il feed non è stato aggiornato: $error';
+        _error = context.l10n.channelAddedFeedFailed(error);
       }
     });
   }
 
-  static String _friendlyError(Object error) {
+  static String _friendlyError(Object error, AppLocalizations l10n) {
     final text = error.toString().replaceFirst('Exception: ', '');
     final lower = text.toLowerCase();
     if (lower.contains('429') || lower.contains('limit')) {
-      return 'YouTube ha limitato la ricerca. Riprova tra poco.';
+      return l10n.searchRateLimited;
     }
     return text.length > 200 ? '${text.substring(0, 200)}…' : text;
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final subscribed = widget.state.channels
         .map((channel) => channel.id)
         .toSet();
@@ -121,7 +125,7 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
                 onChanged: (_) => setState(() {}),
                 style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Cerca un canale per parola…',
+                  hintText: l10n.searchChannelPlaceholder,
                   prefixIcon: const Icon(Icons.search_rounded, size: 18),
                   prefixIconConstraints: const BoxConstraints(
                     minWidth: 42,
@@ -130,7 +134,7 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
                   suffixIcon: _query.text.isEmpty
                       ? null
                       : IconButton(
-                          tooltip: 'Cancella ricerca',
+                          tooltip: l10n.clearSearch,
                           onPressed: () {
                             _query.clear();
                             setState(() {
@@ -160,15 +164,15 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.search_rounded, size: 17),
-              label: const Text('Cerca'),
+              label: Text(l10n.searchAction),
             ),
           ],
         ),
         const SizedBox(height: 7),
         Text(
           isMobilePlatform
-              ? 'La ricerca interroga YouTube. Poi aggiungi il canale con un tocco.'
-              : 'La ricerca interroga YouTube. Poi aggiungi il canale con un click.',
+              ? l10n.searchExplanationPhone
+              : l10n.searchExplanationDesktop,
           style: TextStyle(color: ExpeditusColors.muted, fontSize: 11),
         ),
         const SizedBox(height: 8),
@@ -177,8 +181,8 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
               ? Center(
                   child: Text(
                     _loading
-                        ? 'Cerco canali…'
-                        : _message ?? 'Scrivi una parola e premi Cerca.',
+                        ? l10n.searchingChannels
+                        : _message ?? l10n.searchPrompt,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: ExpeditusColors.muted,
@@ -239,11 +243,11 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
                           ),
                           const SizedBox(width: 8),
                           if (isSubscribed)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 7),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 7),
                               child: Text(
-                                'Già presente',
-                                style: TextStyle(
+                                l10n.alreadySubscribed,
+                                style: const TextStyle(
                                   color: ExpeditusColors.muted,
                                   fontSize: 11,
                                 ),
@@ -261,7 +265,7 @@ class _ChannelSearchTabState extends State<ChannelSearchTab> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Text('Aggiungi'),
+                                  : Text(l10n.addChannel),
                             ),
                         ],
                       ),

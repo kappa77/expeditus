@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../util/l10n.dart';
 
 class VideoLinkTab extends StatefulWidget {
   const VideoLinkTab({super.key, required this.state});
@@ -37,9 +38,10 @@ class _VideoLinkTabState extends State<VideoLinkTab> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _message =
-            'Aggiunto “${linked.video.title}” e iscritto a ${linked.channel.title}. '
-            'Il video è in Guarda più tardi.';
+        _message = context.l10n.videoLinkAdded(
+          linked.video.title,
+          linked.channel.title,
+        );
         _link.clear();
       });
     } catch (e) {
@@ -53,13 +55,13 @@ class _VideoLinkTabState extends State<VideoLinkTab> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'Incolla il link di un video YouTube. Expeditus trova il canale, '
-          'si iscrive automaticamente e salva il video in Guarda più tardi.',
-          style: TextStyle(
+        Text(
+          l10n.videoLinkIntro,
+          style: const TextStyle(
             color: ExpeditusColors.muted,
             fontSize: 12,
             height: 1.45,
@@ -92,7 +94,7 @@ class _VideoLinkTabState extends State<VideoLinkTab> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.add_link_rounded, size: 18),
-            label: const Text('Aggiungi e iscriviti'),
+            label: Text(l10n.addAndSubscribe),
           ),
         ),
         if (_error != null) ...[

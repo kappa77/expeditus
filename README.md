@@ -19,14 +19,15 @@ One row per channel. The latest video. That is the whole feed.
 - **Import your subscriptions** from Google Takeout, paste channel handles or URLs, or search YouTube by keyword.
 - **Channel page with two tabs:** the recent archive and the channel history, with filters, search, tags, and offline downloads.
 - **Save videos for offline playback:** download a video from its channel page; it appears under **Saved** and plays from local storage.
-- **Separate local MP4 library:** add video files from your computer to **Video locali**. The title comes from the file metadata, or from the file name when the metadata is missing; removing an entry never deletes the file.
+- **Separate local MP4 library:** add video files from your computer to **Local videos**. The title comes from the file metadata, or from the file name when the metadata is missing; removing an entry never deletes the file.
 - **RSS mute and feed visibility:** stop new uploads from a channel, and independently choose whether its latest video appears in the **latest/New** list.
-- **Explicit Watch later list:** press `S` on a video to save it; the **Guarda più tardi** view lists saved videos in the order you added them, with the save time.
+- **Explicit Watch later list:** press `S` on a video to save it; the **Watch later** view lists saved videos in the order you added them, with the save time.
 - **Add a video from a link:** paste a YouTube video URL to subscribe to its channel automatically and save the video in Watch later.
 - **First-run onboarding:** the app opens on channel search with a short explanation.
 - **Local-first:** subscriptions, watch state, Watch later, and settings stay on your computer. No Google login. The update check contacts GitHub without sending account data.
+- **Four interface languages:** Italian, English, German, and Spanish. Choose one in Settings, or follow the system language.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
-- **DLNA casting:** send the current video to a TV or MediaRenderer on the same network (desktop and Android). Expeditus discovers devices with SSDP, remembers the list, and has a refresh button to search again. While connected, every opened video plays both on the device and in the app, with the app audio muted for the whole connection (including buffering and errors); audio returns only after disconnecting or choosing **Riproduci solo qui**. If the renderer does not start, the player shows the thumbnail with a play symbol so you can start it; connection and streaming errors are shown in the cast dialog and in a snackbar.
+- **DLNA casting:** send the current video to a TV or MediaRenderer on the same network (desktop and Android). Expeditus discovers devices with SSDP, remembers the list, and has a refresh button to search again. While connected, every opened video plays both on the device and in the app, with the app audio muted for the whole connection (including buffering and errors); audio returns only after disconnecting or choosing **Play here only**. If the renderer does not start, the player shows the thumbnail with a play symbol so you can start it; connection and streaming errors are shown in the cast dialog and in a snackbar.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
 - **Playback speed** from 0.25× to 3.50× in 0.25 steps, with an optional default speed per channel.
 - **Chapters and timestamped bookmarks:** jump to description chapters or save a bookmark at the current second with a personal note.
@@ -43,7 +44,7 @@ One row per channel. The latest video. That is the whole feed.
 
 Open a video and press the cast icon in the player bar. The first time, Expeditus searches the local network for DLNA MediaRenderers; use the refresh button in the dialog to search again. Select a device and wait for the connection animation. From then on, every video you open plays on the TV and in Expeditus with the app audio muted. The TV must be on the same network as the PC or phone. On Android, Expeditus holds a multicast lock while it searches for renderers.
 
-The TV reaches the video through a small media server inside Expeditus. If Windows Firewall blocks it, the app detects that the TV never contacted the PC and shows a **Consenti accesso rete** button; Windows asks for confirmation (UAC) and then adds an inbound rule for Expeditus. This also works when the home network is classified as Public. If you prefer to add the rule manually, run this in an administrator prompt with the Expeditus executable path:
+The TV reaches the video through a small media server inside Expeditus. If Windows Firewall blocks it, the app detects that the TV never contacted the PC and shows an **Allow network access** button; Windows asks for confirmation (UAC) and then adds an inbound rule for Expeditus. This also works when the home network is classified as Public. If you prefer to add the rule manually, run this in an administrator prompt with the Expeditus executable path:
 
 ```powershell
 netsh advfirewall firewall add rule name="Expeditus-DLNA" dir=in action=allow program="C:\Path\To\expeditus.exe" enable=yes profile=any protocol=any

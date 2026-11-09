@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../models.dart';
 import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../util/l10n.dart';
 import '../util/platform.dart';
 import '../util/rss_grouping.dart';
 import 'channel_page.dart';
@@ -179,7 +181,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             if (state.error != null)
-              _CompactError(message: state.error!, onRefresh: state.refresh),
+              _CompactError(
+                message: _errorMessage(context.l10n, state)!,
+                onRefresh: state.refresh,
+              ),
             Expanded(child: _buildView(state, compact: true)),
           ],
         ),
@@ -188,10 +193,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   AppBar _compactAppBar(AppState state) {
+    final l10n = context.l10n;
     return AppBar(
       leading: IconButton(
         key: const Key('open-drawer'),
-        tooltip: 'Apri il menu',
+        tooltip: l10n.openMenu,
         icon: const Icon(Icons.menu_rounded),
         onPressed: () => _scaffoldKey.currentState?.openDrawer(),
       ),
@@ -202,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _titleForView(state.view),
+            _titleForView(l10n, state.view),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -213,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 1),
           Text(
-            _subtitleForView(state),
+            _subtitleForView(l10n, state),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -228,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (state.view != 'local')
           IconButton(
             key: const Key('refresh-button'),
-            tooltip: 'Aggiorna',
+            tooltip: l10n.refreshTooltip,
             onPressed: state.refreshing
                 ? null
                 : () => state.refresh(force: true),
@@ -243,20 +249,20 @@ class _HomeScreenState extends State<HomeScreen> {
         if (state.view == 'local')
           IconButton(
             key: const Key('add-local-video-button'),
-            tooltip: 'Aggiungi video',
+            tooltip: l10n.addVideo,
             onPressed: _addLocalVideos,
             icon: const Icon(Icons.video_library_outlined),
           )
         else
           IconButton(
             key: const Key('import-button'),
-            tooltip: 'Importa',
+            tooltip: l10n.importAction,
             onPressed: () => _openImport(),
             icon: const Icon(Icons.add_rounded),
           ),
         PopupMenuButton<_CompactAction>(
           key: const Key('compact-menu'),
-          tooltip: 'Altre azioni',
+          tooltip: l10n.moreActions,
           onSelected: (action) {
             switch (action) {
               case _CompactAction.markSeen:
@@ -278,64 +284,64 @@ class _HomeScreenState extends State<HomeScreen> {
           itemBuilder: (context) => [
             if (state.newCount > 0 &&
                 !const {'channels', 'rss', 'local'}.contains(state.view))
-              const PopupMenuItem(
+              PopupMenuItem(
                 key: Key('compact-mark-seen'),
                 value: _CompactAction.markSeen,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.done_all_rounded),
-                  title: Text('Segna letti'),
+                  leading: const Icon(Icons.done_all_rounded),
+                  title: Text(l10n.markAllRead),
                 ),
               ),
             if (state.view != 'local')
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: _CompactAction.local,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.video_file_outlined),
-                  title: Text('Video locali'),
+                  leading: const Icon(Icons.video_file_outlined),
+                  title: Text(l10n.navLocal),
                 ),
               ),
             if (state.view != 'rss')
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: _CompactAction.rss,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.history_rounded),
-                  title: Text('Storico RSS'),
+                  leading: const Icon(Icons.history_rounded),
+                  title: Text(l10n.navRss),
                 ),
               ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: _CompactAction.searchChannel,
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.person_search_rounded),
-                title: Text('Cerca canale'),
+                leading: const Icon(Icons.person_search_rounded),
+                title: Text(l10n.navSearchChannel),
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: _CompactAction.importCsv,
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.file_upload_outlined),
-                title: Text('Importa'),
+                leading: const Icon(Icons.file_upload_outlined),
+                title: Text(l10n.importAction),
               ),
             ),
             if (supportsDesktopUpdates)
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: _CompactAction.updates,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.system_update_alt_rounded),
-                  title: Text('Aggiornamenti'),
+                  leading: const Icon(Icons.system_update_alt_rounded),
+                  title: Text(l10n.navUpdates),
                 ),
               ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: _CompactAction.settings,
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.tune_rounded),
-                title: Text('Impostazioni'),
+                leading: const Icon(Icons.tune_rounded),
+                title: Text(l10n.navSettings),
               ),
             ),
           ],
@@ -388,6 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openImport({int initialTab = 0}) async {
+    final l10n = context.l10n;
     final result = await showDialog<ImportResult>(
       context: context,
       barrierDismissible: false,
@@ -396,15 +403,19 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     if (result != null) {
       final parts = <String>[];
-      if (result.added > 0) parts.add('${result.added} canali importati');
-      if (result.skipped > 0) parts.add('${result.skipped} già presenti');
+      if (result.added > 0) {
+        parts.add(l10n.channelsImportedCount(result.added));
+      }
+      if (result.skipped > 0) {
+        parts.add(l10n.alreadyPresentCount(result.skipped));
+      }
       if (result.errors.isNotEmpty) {
-        parts.add('${result.errors.length} errori');
+        parts.add(l10n.errorsCount(result.errors.length));
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            parts.isEmpty ? 'Nessun canale importato.' : parts.join(' · '),
+            parts.isEmpty ? l10n.noChannelsImported : parts.join(' · '),
           ),
         ),
       );
@@ -413,9 +424,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _addLocalVideos() async {
+    final l10n = context.l10n;
     final files = await openFiles(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'Video MP4', extensions: ['mp4']),
+      acceptedTypeGroups: [
+        XTypeGroup(label: l10n.mp4VideoType, extensions: const ['mp4']),
       ],
     );
     if (files.isEmpty || !mounted) return;
@@ -427,20 +439,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final parts = <String>[];
     if (result.added > 0) {
-      parts.add(
-        result.added == 1
-            ? '1 video aggiunto'
-            : '${result.added} video aggiunti',
-      );
+      parts.add(l10n.videosAddedCount(result.added));
     }
     if (result.errors.isNotEmpty) {
-      parts.add('${result.errors.length} errori');
+      parts.add(l10n.errorsCount(result.errors.length));
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          parts.isEmpty ? 'Nessun video aggiunto.' : parts.join(' · '),
-        ),
+        content: Text(parts.isEmpty ? l10n.noVideosAdded : parts.join(' · ')),
       ),
     );
     _listFocus.requestFocus();
@@ -591,30 +597,53 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-String _titleForView(String view) => switch (view) {
-  'new' => 'Nuovi',
-  'queue' => 'Guarda più tardi',
-  'watch-later' => 'Guarda più tardi',
-  'saved' => 'Salvati',
-  'local' => 'Video locali',
-  'rss' => 'Storico RSS',
-  'channels' => 'Canali',
-  _ => 'Ultimi',
+String _titleForView(AppLocalizations l10n, String view) => switch (view) {
+  'new' => l10n.viewNew,
+  'queue' => l10n.viewWatchLater,
+  'watch-later' => l10n.viewWatchLater,
+  'saved' => l10n.viewSaved,
+  'local' => l10n.viewLocal,
+  'rss' => l10n.viewRss,
+  'channels' => l10n.viewChannels,
+  _ => l10n.viewLatest,
 };
 
-String _subtitleForView(AppState state) => switch (state.view) {
-  'new' => '${state.visible.length} video da vedere',
-  'queue' => '${state.watchLaterCount} video da guardare',
-  'watch-later' => '${state.watchLaterCount} video da guardare',
-  'saved' => '${state.savedCount} video offline',
-  'local' => '${state.localCount} file MP4 $onDeviceLabel',
-  'rss' =>
-    state.rssChannel == null && state.search.trim().isEmpty
-        ? '${state.rssHistoryCount} video visti nel feed'
-        : '${state.visible.length} video · ${state.rssHistoryCount} totali',
-  'channels' => '${state.channels.length} iscrizioni',
-  _ => '${state.latestCount} canali · ${state.newCount} nuovi',
-};
+String _subtitleForView(AppLocalizations l10n, AppState state) =>
+    switch (state.view) {
+      'new' => l10n.subtitleNew(l10n.videosLabel(state.visible.length)),
+      'queue' => l10n.subtitleWatchLater(
+        l10n.videosLabel(state.watchLaterCount),
+      ),
+      'watch-later' => l10n.subtitleWatchLater(
+        l10n.videosLabel(state.watchLaterCount),
+      ),
+      'saved' => l10n.subtitleSaved(l10n.videosLabel(state.savedCount)),
+      'local' => l10n.subtitleLocal(
+        l10n.mp4FilesLabel(state.localCount),
+        onDeviceLocation(l10n),
+      ),
+      'rss' =>
+        state.rssChannel == null && state.search.trim().isEmpty
+            ? l10n.subtitleRssAll(l10n.videosLabel(state.rssHistoryCount))
+            : l10n.subtitleRssFiltered(
+                l10n.videosLabel(state.visible.length),
+                '${state.rssHistoryCount}',
+              ),
+      'channels' => l10n.subtitleChannels(
+        l10n.subscriptionsLabel(state.channels.length),
+      ),
+      _ => l10n.subtitleLatest(
+        l10n.channelsLabel(state.latestCount),
+        l10n.newLabel(state.newCount),
+      ),
+    };
+
+String? _errorMessage(AppLocalizations l10n, AppState state) {
+  if (state.refreshFailures > 0) {
+    return l10n.channelsNotUpdated(state.refreshFailures);
+  }
+  return state.error;
+}
 
 enum _CompactAction {
   markSeen,
@@ -651,6 +680,7 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       width: width,
       color: ExpeditusColors.surface,
@@ -690,7 +720,7 @@ class _Sidebar extends StatelessWidget {
                 ),
                 if (onClose != null)
                   IconButton(
-                    tooltip: 'Chiudi menu',
+                    tooltip: l10n.closeMenu,
                     onPressed: onClose,
                     icon: const Icon(Icons.close_rounded),
                   ),
@@ -705,7 +735,7 @@ class _Sidebar extends StatelessWidget {
                 children: [
                   _NavItem(
                     key: const Key('nav-latest'),
-                    label: 'Ultimi',
+                    label: l10n.navLatest,
                     icon: Icons.bolt_rounded,
                     count: state.latestCount,
                     selected: state.view == 'latest',
@@ -713,7 +743,7 @@ class _Sidebar extends StatelessWidget {
                   ),
                   _NavItem(
                     key: const Key('nav-new'),
-                    label: 'Nuovi',
+                    label: l10n.navNew,
                     icon: Icons.fiber_new_rounded,
                     count: state.newCount,
                     selected: state.view == 'new',
@@ -723,7 +753,7 @@ class _Sidebar extends StatelessWidget {
                     key: const Key('nav-watch-later'),
                     child: _NavItem(
                       key: const Key('nav-queue'),
-                      label: 'Guarda più tardi',
+                      label: l10n.navWatchLater,
                       icon: state.view == 'queue'
                           ? Icons.watch_later_rounded
                           : Icons.watch_later_outlined,
@@ -734,7 +764,7 @@ class _Sidebar extends StatelessWidget {
                   ),
                   _NavItem(
                     key: const Key('nav-saved'),
-                    label: 'Salvati',
+                    label: l10n.navSaved,
                     icon: Icons.download_done_rounded,
                     count: state.savedCount,
                     selected: state.view == 'saved',
@@ -742,7 +772,7 @@ class _Sidebar extends StatelessWidget {
                   ),
                   _NavItem(
                     key: const Key('nav-local'),
-                    label: 'Video locali',
+                    label: l10n.navLocal,
                     icon: Icons.video_file_outlined,
                     count: state.localCount,
                     selected: state.view == 'local',
@@ -750,7 +780,7 @@ class _Sidebar extends StatelessWidget {
                   ),
                   _NavItem(
                     key: const Key('nav-rss-history'),
-                    label: 'Storico RSS',
+                    label: l10n.navRss,
                     icon: Icons.history_rounded,
                     count: state.rssHistoryCount,
                     selected: state.view == 'rss',
@@ -761,7 +791,7 @@ class _Sidebar extends StatelessWidget {
                   const SizedBox(height: 10),
                   _NavItem(
                     key: const Key('nav-channels'),
-                    label: 'Canali',
+                    label: l10n.navChannels,
                     icon: Icons.subscriptions_outlined,
                     count: state.channels.length,
                     selected: state.view == 'channels',
@@ -772,13 +802,13 @@ class _Sidebar extends StatelessWidget {
                   if (onClose == null) ...[
                     _NavItem(
                       key: const Key('nav-import'),
-                      label: 'Importa',
+                      label: l10n.navImport,
                       icon: Icons.add_circle_outline_rounded,
                       onTap: onOpenImport,
                     ),
                     _NavItem(
                       key: const Key('nav-channel-search'),
-                      label: 'Cerca canale',
+                      label: l10n.navSearchChannel,
                       icon: Icons.person_search_rounded,
                       onTap: onSearchChannel,
                     ),
@@ -800,8 +830,10 @@ class _Sidebar extends StatelessWidget {
               ),
               label: Text(
                 state.hasUpdate && state.latestRelease != null
-                    ? 'Aggiorna a v${state.latestRelease!.version.canonical}'
-                    : 'Aggiornamenti',
+                    ? l10n.updateNavPrompt(
+                        'v${state.latestRelease!.version.canonical}',
+                      )
+                    : l10n.navUpdates,
               ),
               style: TextButton.styleFrom(
                 alignment: Alignment.centerLeft,
@@ -814,7 +846,7 @@ class _Sidebar extends StatelessWidget {
             key: const Key('settings-button'),
             onPressed: onOpenSettings,
             icon: const Icon(Icons.tune_rounded, size: 18),
-            label: const Text('Impostazioni'),
+            label: Text(l10n.navSettings),
             style: TextButton.styleFrom(
               alignment: Alignment.centerLeft,
               foregroundColor: ExpeditusColors.muted,
@@ -824,7 +856,7 @@ class _Sidebar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Text(
-              'Solo ciò che hai scelto.\nNessuna raccomandazione.',
+              l10n.sidebarTagline,
               style: TextStyle(
                 color: ExpeditusColors.muted.withValues(alpha: 0.7),
                 fontSize: 10.5,
@@ -946,8 +978,9 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = _titleForView(state.view);
-    final subtitle = _subtitleForView(state);
+    final l10n = context.l10n;
+    final title = _titleForView(l10n, state.view);
+    final subtitle = _subtitleForView(l10n, state);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 20, 16),
@@ -981,10 +1014,7 @@ class _Header extends StatelessWidget {
               state.view != 'channels' &&
               state.view != 'rss' &&
               state.view != 'local') ...[
-            TextButton(
-              onPressed: onMarkAllSeen,
-              child: const Text('Segna letti'),
-            ),
+            TextButton(onPressed: onMarkAllSeen, child: Text(l10n.markAllRead)),
             const SizedBox(width: 4),
           ],
           SizedBox(
@@ -1011,7 +1041,7 @@ class _Header extends StatelessWidget {
             const SizedBox(width: 8),
             IconButton(
               key: const Key('refresh-button'),
-              tooltip: 'Aggiorna (R)',
+              tooltip: l10n.refreshWithKey,
               onPressed: state.refreshing ? null : onRefresh,
               icon: state.refreshing
                   ? const SizedBox(
@@ -1028,14 +1058,14 @@ class _Header extends StatelessWidget {
               key: const Key('add-local-video-button'),
               onPressed: onAddLocalVideos,
               icon: const Icon(Icons.video_library_outlined, size: 18),
-              label: const Text('Aggiungi video'),
+              label: Text(l10n.addVideo),
             )
           else
             FilledButton.icon(
               key: const Key('import-button'),
               onPressed: onImport,
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Importa'),
+              label: Text(l10n.importAction),
             ),
         ],
       ),
@@ -1239,6 +1269,7 @@ class _RssGroupHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final title = entry.title.trim().isEmpty ? entry.channelId : entry.title;
     final color = videoChannelColor(entry.channelId);
     return Container(
@@ -1274,7 +1305,7 @@ class _RssGroupHeader extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Text(
-            entry.count == 1 ? '1 video' : '${entry.count} video',
+            l10n.videosLabel(entry.count),
             style: const TextStyle(
               color: ExpeditusColors.muted,
               fontSize: 10.5,
@@ -1299,6 +1330,7 @@ class _RssChannelFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final summaries = summarizeRssChannels(state.rssHistory);
     final total = summaries.fold<int>(0, (sum, item) => sum + item.count);
     final selectedId = state.rssChannel;
@@ -1335,7 +1367,7 @@ class _RssChannelFilter extends StatelessWidget {
         ),
         selectedItemBuilder: (context) => [
           Text(
-            'Tutti i canali ($total)',
+            l10n.allChannelsWithCount(total),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1350,7 +1382,7 @@ class _RssChannelFilter extends StatelessWidget {
           DropdownMenuItem<String>(
             value: '',
             child: Text(
-              'Tutti i canali ($total)',
+              l10n.allChannelsWithCount(total),
               key: const Key('rss-channel-option-all'),
             ),
           ),
@@ -1385,9 +1417,12 @@ class _RssChannelFilter extends StatelessWidget {
               color: ExpeditusColors.muted,
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Canale',
-              style: TextStyle(color: ExpeditusColors.muted, fontSize: 11.5),
+            Text(
+              l10n.channelFilterLabel,
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 11.5,
+              ),
             ),
             const SizedBox(width: 10),
             SizedBox(width: 260, child: dropdown),
@@ -1395,8 +1430,14 @@ class _RssChannelFilter extends StatelessWidget {
             Expanded(
               child: Text(
                 selected == null
-                    ? '${summaries.length} canali · $matching video'
-                    : '${state.visible.length} video · ${_summaryLabel(selected)}',
+                    ? l10n.rssChannelSummary(
+                        l10n.channelsLabel(summaries.length),
+                        l10n.videosLabel(matching),
+                      )
+                    : l10n.rssSelectedSummary(
+                        l10n.videosLabel(state.visible.length),
+                        _summaryLabel(selected),
+                      ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
@@ -1431,39 +1472,40 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final filtered = state.search.trim().isNotEmpty;
     final local = state.view == 'local';
     final noChannels = state.channels.isEmpty;
     final title = filtered
-        ? 'Nessun risultato'
+        ? l10n.emptyNoResults
         : local
-        ? 'Nessun video locale'
+        ? l10n.emptyNoLocalVideos
         : noChannels
-        ? 'La tua casella è vuota'
+        ? l10n.emptyInbox
         : state.view == 'new'
-        ? 'Sei in pari'
+        ? l10n.emptyCaughtUp
         : state.view == 'queue' || state.view == 'watch-later'
-        ? 'Guarda più tardi è vuoto'
+        ? l10n.emptyWatchLater
         : state.view == 'saved'
-        ? 'Nessun video salvato'
-        : 'Nessun video';
+        ? l10n.emptyNoSaved
+        : l10n.emptyNoVideos;
     final message = filtered
         ? local
-              ? 'Prova con un altro termine.'
-              : 'Prova con un altro termine. Cerchiamo solo nei canali che segui.'
+              ? l10n.emptyNoResultsLocalBody
+              : l10n.emptyNoResultsBody
         : local
-        ? 'Aggiungi un file MP4 $fromDeviceLabel. Il titolo viene letto dai metadati del file, oppure dal nome del file.'
+        ? l10n.emptyNoLocalVideosBody(fromDeviceLocation(l10n))
         : noChannels
-        ? 'Importa le tue iscrizioni da Google Takeout, oppure incolla un handle o un URL di canale.'
+        ? l10n.emptyInboxBody
         : state.view == 'queue' || state.view == 'watch-later'
         ? (compact
-              ? 'Metti un video in Guarda più tardi dal menu della riga (⋮), oppure aprilo e usa l’icona dell’orologio.'
-              : 'Metti un video in Guarda più tardi con il tasto S o con l’icona dell’orologio nella riga del video.')
+              ? l10n.emptyWatchLaterBodyCompact
+              : l10n.emptyWatchLaterBodyDesktop)
         : state.view == 'saved'
-        ? 'Apri il dettaglio di un canale e usa il pulsante di download per guardarlo offline.'
+        ? l10n.emptyNoSavedBody
         : state.view == 'rss'
-        ? 'I video che compaiono nei feed RSS resteranno qui, senza duplicati, anche quando non sono più nell’ultimo feed.'
-        : 'Nessun nuovo video dai canali che segui.';
+        ? l10n.emptyRssBody
+        : l10n.emptyNoNewBody;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -1506,7 +1548,7 @@ class _EmptyState extends StatelessWidget {
                   key: const Key('empty-add-local-button'),
                   onPressed: onAddLocalVideos,
                   icon: const Icon(Icons.video_library_outlined, size: 18),
-                  label: const Text('Aggiungi video MP4'),
+                  label: Text(l10n.addMp4Button),
                 ),
               ] else if (noChannels) ...[
                 const SizedBox(height: 18),
@@ -1521,19 +1563,21 @@ class _EmptyState extends StatelessWidget {
                     if (result != null && context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('${result.added} canali importati.'),
+                          content: Text(
+                            l10n.channelsImportedCount(result.added),
+                          ),
                         ),
                       );
                     }
                   },
                   icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Importa iscrizioni'),
+                  label: Text(l10n.importSubscriptions),
                 ),
               ],
               if (!compact && !local && !noChannels && !filtered) ...[
                 const SizedBox(height: 10),
                 Text(
-                  'R per aggiornare · / per cercare',
+                  l10n.keyboardHint,
                   style: TextStyle(
                     color: ExpeditusColors.muted.withValues(alpha: 0.6),
                     fontSize: 11,
@@ -1561,6 +1605,7 @@ class _StatusBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       constraints: const BoxConstraints(minHeight: 34),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -1571,10 +1616,13 @@ class _StatusBar extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            '${state.channels.length} canali · ${state.newCount} nuovi',
+            l10n.subtitleLatest(
+              l10n.channelsLabel(state.channels.length),
+              l10n.newLabel(state.newCount),
+            ),
             style: const TextStyle(color: ExpeditusColors.muted, fontSize: 11),
           ),
-          if (state.error != null) ...[
+          if (_errorMessage(l10n, state) != null) ...[
             const SizedBox(width: 12),
             const Icon(
               Icons.warning_amber_rounded,
@@ -1584,7 +1632,7 @@ class _StatusBar extends StatelessWidget {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                state.error!,
+                _errorMessage(l10n, state)!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1602,13 +1650,16 @@ class _StatusBar extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 1.5),
             ),
             const SizedBox(width: 7),
-            const Text(
-              'Aggiornamento…',
-              style: TextStyle(color: ExpeditusColors.muted, fontSize: 11),
+            Text(
+              l10n.statusUpdating,
+              style: const TextStyle(
+                color: ExpeditusColors.muted,
+                fontSize: 11,
+              ),
             ),
           ] else
             Text(
-              'Aggiornato ${relativeTime(state.lastRefresh)}',
+              l10n.statusUpdated(relativeTime(context, state.lastRefresh)),
               style: const TextStyle(
                 color: ExpeditusColors.muted,
                 fontSize: 11,
@@ -1617,7 +1668,7 @@ class _StatusBar extends StatelessWidget {
           if (!isMobilePlatform) ...[
             const SizedBox(width: 16),
             Text(
-              '↑↓ · Invio · M · S',
+              l10n.statusShortcuts,
               style: TextStyle(
                 color: ExpeditusColors.muted.withValues(alpha: 0.55),
                 fontSize: 10.5,
@@ -1631,8 +1682,10 @@ class _StatusBar extends StatelessWidget {
           if (showUpdates)
             Tooltip(
               message: state.hasUpdate
-                  ? 'Aggiornamento disponibile: v${state.latestRelease!.version.canonical}'
-                  : 'Aggiornamenti',
+                  ? l10n.updateAvailableTooltip(
+                      'v${state.latestRelease!.version.canonical}',
+                    )
+                  : l10n.navUpdates,
               child: InkWell(
                 key: const Key('updates-button'),
                 onTap: onOpenUpdates,
@@ -1712,6 +1765,7 @@ class _SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (context, value, _) {
@@ -1724,8 +1778,8 @@ class _SearchBar extends StatelessWidget {
           style: const TextStyle(fontSize: 13.5),
           decoration: InputDecoration(
             hintText: state.view == 'local'
-                ? 'Cerca video locali…'
-                : 'Cerca nelle iscrizioni…',
+                ? l10n.searchLocalHint
+                : l10n.searchSubscriptionsHint,
             prefixIcon: const Icon(Icons.search_rounded, size: 19),
             prefixIconConstraints: const BoxConstraints(
               minWidth: 42,
@@ -1735,7 +1789,7 @@ class _SearchBar extends StatelessWidget {
                 ? null
                 : IconButton(
                     key: const Key('search-clear'),
-                    tooltip: 'Cancella ricerca',
+                    tooltip: l10n.clearSearch,
                     onPressed: onClear,
                     icon: const Icon(Icons.close_rounded, size: 18),
                   ),
@@ -1817,7 +1871,7 @@ class _CompactError extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Riprova',
+              tooltip: context.l10n.retry,
               onPressed: () => onRefresh(force: true),
               icon: const Icon(Icons.refresh_rounded, size: 19),
             ),
@@ -1857,6 +1911,7 @@ class _CompactNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return NavigationBar(
       selectedIndex: _indexFor(state.view),
       onDestinationSelected: (index) {
@@ -1874,17 +1929,17 @@ class _CompactNavBar extends StatelessWidget {
         }
       },
       destinations: [
-        const NavigationDestination(
-          key: Key('mobile-nav-latest'),
+        NavigationDestination(
+          key: const Key('mobile-nav-latest'),
           icon: Icon(Icons.bolt_outlined),
           selectedIcon: Icon(Icons.bolt_rounded),
-          label: 'Ultimi',
+          label: l10n.navLatest,
         ),
         NavigationDestination(
           key: const Key('mobile-nav-new'),
           icon: _counted(Icons.fiber_new_outlined, state.newCount),
           selectedIcon: _counted(Icons.fiber_new_rounded, state.newCount),
-          label: 'Nuovi',
+          label: l10n.navNew,
         ),
         NavigationDestination(
           key: const Key('mobile-nav-queue'),
@@ -1893,18 +1948,18 @@ class _CompactNavBar extends StatelessWidget {
             Icons.watch_later_rounded,
             state.watchLaterCount,
           ),
-          label: 'Dopo',
+          label: l10n.mobileQueueShort,
         ),
         NavigationDestination(
           key: const Key('mobile-nav-channels'),
           icon: const Icon(Icons.subscriptions_outlined),
           selectedIcon: const Icon(Icons.subscriptions_rounded),
-          label: 'Canali',
+          label: l10n.navChannels,
         ),
-        const NavigationDestination(
-          key: Key('mobile-nav-more'),
+        NavigationDestination(
+          key: const Key('mobile-nav-more'),
           icon: Icon(Icons.more_horiz_rounded),
-          label: 'Altro',
+          label: l10n.navMore,
         ),
       ],
     );

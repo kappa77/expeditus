@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import 'services/stream_resolver.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
@@ -15,15 +15,20 @@ class ExpeditusApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Expeditus',
-      debugShowCheckedModeBanner: false,
-      theme: expeditusTheme(),
-      themeMode: ThemeMode.dark,
-      locale: const Locale('it', 'IT'),
-      supportedLocales: const [Locale('it', 'IT')],
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      home: _RootGate(state: state, playerResolver: playerResolver),
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Expeditus',
+          debugShowCheckedModeBanner: false,
+          theme: expeditusTheme(),
+          themeMode: ThemeMode.dark,
+          locale: state.locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: _RootGate(state: state, playerResolver: playerResolver),
+        );
+      },
     );
   }
 }
@@ -36,19 +41,12 @@ class _RootGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: state,
-      builder: (context, _) {
-        if (state.loading) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (state.channels.isEmpty && !state.onboardingSeen) {
-          return WelcomeScreen(state: state);
-        }
-        return HomeScreen(state: state, playerResolver: playerResolver);
-      },
-    );
+    if (state.loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (state.channels.isEmpty && !state.onboardingSeen) {
+      return WelcomeScreen(state: state);
+    }
+    return HomeScreen(state: state, playerResolver: playerResolver);
   }
 }

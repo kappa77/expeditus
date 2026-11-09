@@ -56,12 +56,14 @@ class UpdateService implements UpdateChecker {
         rawBody: result.rawBody,
       );
     } on UpdateException catch (error) {
-      return UpdateCheckResult(checkedAt: now, error: error.message);
-    } on Object catch (error) {
       return UpdateCheckResult(
         checkedAt: now,
-        error: 'Controllo aggiornamenti non riuscito: $error',
+        error: error.message,
+        failureKind: error.kind,
+        statusCode: error.statusCode,
       );
+    } on Object catch (error) {
+      return UpdateCheckResult(checkedAt: now, error: '$error');
     }
   }
 

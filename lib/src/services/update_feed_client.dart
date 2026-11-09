@@ -83,7 +83,7 @@ class UpdateFeedClient {
         cachedBody,
         now,
         etag,
-        'Il server aggiornamenti non risponde.',
+        'The update server is not responding.',
       );
     } on UpdateException {
       rethrow;
@@ -92,7 +92,7 @@ class UpdateFeedClient {
         cachedBody,
         now,
         etag,
-        'Impossibile contattare il server aggiornamenti: $error',
+        'Could not contact the update server: $error',
       );
     }
 
@@ -101,13 +101,13 @@ class UpdateFeedClient {
         cachedBody,
         now,
         etag,
-        'Il feed non è cambiato ma non c’è una copia locale valida.',
+        'The feed did not change but there is no valid local copy.',
       );
     }
 
     if (response.statusCode == 401) {
       throw const UpdateException(
-        'Il feed aggiornamenti ha rifiutato le credenziali (401).',
+        'The update feed rejected the credentials (401).',
         kind: UpdateFailureKind.unauthorized,
         statusCode: 401,
       );
@@ -116,36 +116,34 @@ class UpdateFeedClient {
       final remaining = response.headers['x-ratelimit-remaining'];
       if (remaining == '0') {
         throw const UpdateException(
-          'Troppe richieste a GitHub per il controllo aggiornamenti. '
-          'Riprova più tardi.',
+          'Too many GitHub requests for the update check. Try again later.',
           kind: UpdateFailureKind.rateLimited,
           statusCode: 403,
         );
       }
       throw const UpdateException(
-        'GitHub ha rifiutato il controllo aggiornamenti (403).',
+        'GitHub rejected the update check (403).',
         kind: UpdateFailureKind.unauthorized,
         statusCode: 403,
       );
     }
     if (response.statusCode == 404) {
       throw const UpdateException(
-        'Nessuna release trovata. Il repository potrebbe non avere ancora '
-        'release pubblicate.',
+        'No release found. The repository may not have published any releases yet.',
         kind: UpdateFailureKind.notFound,
         statusCode: 404,
       );
     }
     if (response.statusCode == 429) {
       throw const UpdateException(
-        'Troppe richieste al server aggiornamenti (429): riprova più tardi.',
+        'Too many requests to the update server (429): try again later.',
         kind: UpdateFailureKind.rateLimited,
         statusCode: 429,
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw UpdateException(
-        'Il server aggiornamenti ha risposto ${response.statusCode}.',
+        'The update server responded ${response.statusCode}.',
         kind: response.statusCode >= 500
             ? UpdateFailureKind.server
             : UpdateFailureKind.invalidFeed,
@@ -156,7 +154,7 @@ class UpdateFeedClient {
     final bytes = response.bodyBytes;
     if (bytes.length > _maxBodyBytes) {
       throw const UpdateException(
-        'La risposta del feed aggiornamenti è troppo grande.',
+        'The update feed response is too large.',
         kind: UpdateFailureKind.invalidFeed,
       );
     }
@@ -164,7 +162,7 @@ class UpdateFeedClient {
     final release = AppRelease.fromJsonString(body);
     if (release == null) {
       throw const UpdateException(
-        'La risposta del feed aggiornamenti non è una release valida.',
+        'The update feed response is not a valid release.',
         kind: UpdateFailureKind.invalidFeed,
       );
     }
@@ -195,7 +193,7 @@ class UpdateFeedClient {
       if (redirects++ >= 5) {
         await _discard(streamed);
         throw const UpdateException(
-          'Troppi redirect nel feed aggiornamenti.',
+          'Too many redirects in the update feed.',
           kind: UpdateFailureKind.invalidFeed,
         );
       }
@@ -203,7 +201,7 @@ class UpdateFeedClient {
       await _discard(streamed);
       if (location == null || location.trim().isEmpty) {
         throw const UpdateException(
-          'Redirect senza destinazione nel feed aggiornamenti.',
+          'Redirect without a destination in the update feed.',
           kind: UpdateFailureKind.invalidFeed,
         );
       }
@@ -245,7 +243,7 @@ class UpdateFeedClient {
     final release = AppRelease.fromJsonString(cachedBody);
     if (release == null) {
       throw UpdateException(
-        'La copia locale del feed aggiornamenti non è valida. $reason',
+        'The local update feed cache is invalid. $reason',
         kind: UpdateFailureKind.invalidFeed,
       );
     }
@@ -262,7 +260,7 @@ class UpdateFeedClient {
     final uri = Uri.tryParse(value.trim());
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
       throw const UpdateException(
-        'URL del feed aggiornamenti non valido.',
+        'Invalid update feed URL.',
         kind: UpdateFailureKind.invalidFeed,
       );
     }
@@ -274,7 +272,7 @@ class UpdateFeedClient {
       return uri;
     }
     throw const UpdateException(
-      'Il feed aggiornamenti deve usare HTTPS.',
+      'The update feed must use HTTPS.',
       kind: UpdateFailureKind.invalidFeed,
     );
   }

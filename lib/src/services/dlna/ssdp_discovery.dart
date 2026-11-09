@@ -66,10 +66,7 @@ class SsdpDlnaDiscovery implements DlnaDiscovery {
         }
       }
       if (sockets.isEmpty) {
-        final socket = await RawDatagramSocket.bind(
-          InternetAddress.anyIPv4,
-          0,
-        );
+        final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
         socket.broadcastEnabled = true;
         sockets.add(socket);
         subscriptions.add(_listen(socket, responses));
@@ -92,7 +89,7 @@ class SsdpDlnaDiscovery implements DlnaDiscovery {
         }
       }
       if (sent == 0) {
-        throw Exception('Invio della ricerca multicast non riuscito.');
+        throw Exception('Failed to send the multicast discovery request.');
       }
 
       await Future<void>.delayed(timeout);

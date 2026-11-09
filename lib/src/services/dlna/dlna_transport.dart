@@ -142,7 +142,7 @@ class DlnaSoapTransport implements DlnaTransport {
           .timeout(_timeout);
     } on Object catch (error) {
       throw DlnaTransportException(
-        'Il dispositivo non risponde ($action): ${_short(error)}',
+        'The device did not respond ($action): ${_short(error)}',
       );
     }
 
@@ -186,8 +186,8 @@ class DlnaSoapTransport implements DlnaTransport {
         ? ': ${description.trim()}'
         : '';
     return DlnaTransportException(
-      'Azione $action rifiutata dal dispositivo'
-      '${code == null ? '' : ' (codice $code)'}$detail',
+      'Action $action rejected by the device'
+      '${code == null ? '' : ' (code $code)'}$detail',
       code: code,
     );
   }

@@ -27,7 +27,9 @@ void main() {
     await initializeDateFormatting('it_IT');
   });
 
-  testWidgets('telefono: shell compatto in portrait e landscape', (tester) async {
+  testWidgets('telefono: shell compatto in portrait e landscape', (
+    tester,
+  ) async {
     final harness = (await tester.runAsync(_Harness.create))!;
     addTearDown(harness.dispose);
 
@@ -86,12 +88,18 @@ class _Harness {
 
     // Nessuna rete: il feed RSS ritorna sempre vuoto.
     final client = MockClient(
-      (_) async => http.Response(_emptyFeed, 200, headers: {
-        'content-type': 'application/xml; charset=utf-8',
-      }),
+      (_) async => http.Response(
+        _emptyFeed,
+        200,
+        headers: {'content-type': 'application/xml; charset=utf-8'},
+      ),
     );
 
-    final now = DateTime(2025, 3, 14).millisecondsSinceEpoch;
+    // Relative to the current time so the rendered date labels stay stable
+    // instead of gaining a year suffix once the calendar year changes.
+    final now = DateTime.now()
+        .subtract(const Duration(hours: 1))
+        .millisecondsSinceEpoch;
     await db.upsertChannel(
       Channel(id: 'UCaaaaaaaaaaaaaaaaaaaaaa', title: 'Canale A', addedAt: now),
     );

@@ -1,15 +1,19 @@
+import 'package:flutter/widgets.dart';
 import 'package:intl/intl.dart';
 
-String relativeTime(DateTime? date) {
-  if (date == null) return 'mai';
+import 'l10n.dart';
+
+String relativeTime(BuildContext context, DateTime? date) {
+  final l10n = context.l10n;
+  if (date == null) return l10n.relativeNever;
   final diff = DateTime.now().difference(date);
-  if (diff.isNegative) return 'adesso';
-  if (diff.inMinutes < 1) return 'ora';
-  if (diff.inMinutes < 60) return '${diff.inMinutes} min fa';
-  if (diff.inHours < 24) return '${diff.inHours} h fa';
-  if (diff.inDays == 1) return 'ieri';
-  if (diff.inDays < 7) return '${diff.inDays} g fa';
-  return DateFormat('d MMM', 'it_IT').format(date);
+  if (diff.isNegative) return l10n.relativeNow;
+  if (diff.inMinutes < 1) return l10n.relativeNow;
+  if (diff.inMinutes < 60) return l10n.relativeMinutes(diff.inMinutes);
+  if (diff.inHours < 24) return l10n.relativeHours(diff.inHours);
+  if (diff.inDays == 1) return l10n.relativeYesterday;
+  if (diff.inDays < 7) return l10n.relativeDays(diff.inDays);
+  return shortDate(context, date);
 }
 
 String formatDuration(int? seconds) {
@@ -22,10 +26,27 @@ String formatDuration(int? seconds) {
   return '$m:${two(s)}';
 }
 
-String shortDate(DateTime date) {
+String shortDate(BuildContext context, DateTime date) {
+  final locale = intlLocaleName(Localizations.localeOf(context));
   final now = DateTime.now();
   if (now.year == date.year) {
-    return DateFormat('d MMM', 'it_IT').format(date);
+    return DateFormat('d MMM', locale).format(date);
   }
-  return DateFormat('d MMM yyyy', 'it_IT').format(date);
+  return DateFormat('d MMM yyyy', locale).format(date);
 }
+
+String monthYear(BuildContext context, DateTime date) {
+  final raw = DateFormat(
+    'MMMM yyyy',
+    intlLocaleName(Localizations.localeOf(context)),
+  ).format(date);
+  return raw.isEmpty ? raw : raw[0].toUpperCase() + raw.substring(1);
+}
+
+/// Maps Flutter locales to the regional variants used by `intl`.
+String intlLocaleName(Locale locale) => switch (locale.languageCode) {
+  'it' => 'it_IT',
+  'de' => 'de_DE',
+  'es' => 'es_ES',
+  _ => 'en_US',
+};

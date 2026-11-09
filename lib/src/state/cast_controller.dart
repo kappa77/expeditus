@@ -17,6 +17,27 @@ enum CastConnectionState { disconnected, connecting, connected }
 
 enum CastPlaybackState { idle, starting, playing, paused, stopped, error }
 
+enum CastFailureKind {
+  connect,
+  send,
+  discovery,
+  action,
+  firewallDenied,
+  networkProfile,
+  unresponsive,
+  noStream,
+}
+
+/// A cast failure that the UI can localize without knowing about the
+/// controller or the transport implementation.
+class CastFailure {
+  const CastFailure(this.kind, {this.deviceName, this.details});
+
+  final CastFailureKind kind;
+  final String? deviceName;
+  final String? details;
+}
+
 typedef CastTransportFactory = DlnaTransport Function(DlnaDevice device);
 typedef CastStreamResolver = Future<ResolvedStream> Function(String videoId);
 
@@ -54,14 +75,14 @@ class CastController extends ChangeNotifier {
   List<DlnaDevice> devices = const [];
   bool discovering = false;
   bool hasDiscovered = false;
-  String? discoveryError;
+  CastFailure? discoveryError;
 
   CastConnectionState connection = CastConnectionState.disconnected;
   DlnaDevice? device;
   DlnaTransport? _transport;
 
   CastPlaybackState playback = CastPlaybackState.idle;
-  String? error;
+  CastFailure? error;
   VideoItem? currentVideo;
 
   /// True when the renderer did not reach the local media server and Windows
@@ -94,7 +115,10 @@ class CastController extends ChangeNotifier {
 
   bool get remotePlaying => playback == CastPlaybackState.playing;
 
-  String? get connectedDeviceName => device?.displayName;
+  String? get connectedDeviceName {
+    final name = device?.displayName.trim();
+    return name == null || name.isEmpty ? null : name;
+  }
 
   Future<void> discover({bool force = false}) async {
     if (_disposed || discovering) return;
@@ -116,8 +140,10 @@ class CastController extends ChangeNotifier {
       }
     } on Object catch (exception) {
       if (_disposed) return;
-      discoveryError =
-          'Ricerca dispositivi non riuscita: ${_describe(exception)}';
+      discoveryError = CastFailure(
+        CastFailureKind.discovery,
+        details: _describe(exception),
+      );
     } finally {
       if (!_disposed) {
         discovering = false;
@@ -170,9 +196,11 @@ class CastController extends ChangeNotifier {
       connection = CastConnectionState.disconnected;
       device = null;
       playback = CastPlaybackState.idle;
-      error =
-          'Aggancio a ${next.displayName} non riuscito: '
-          '${_describe(exception)}';
+      error = CastFailure(
+        CastFailureKind.connect,
+        deviceName: next.displayName,
+        details: _describe(exception),
+      );
       _notify();
       return false;
     }
@@ -231,9 +259,7 @@ class CastController extends ChangeNotifier {
           );
         } else {
           if (fallbackUri == null) {
-            throw const CastMediaException(
-              'Nessuno stream disponibile per il dispositivo.',
-            );
+            throw const _NoCastStream();
           }
           final playlist =
               fallbackKind == 'hls' ||
@@ -289,12 +315,21 @@ class CastController extends ChangeNotifier {
       _notify();
       unawaited(_probeUntilPlaying(generation));
       return true;
+    } on _NoCastStream {
+      if (_disposed || generation != _castGeneration) return false;
+      playback = CastPlaybackState.error;
+      error = const CastFailure(CastFailureKind.noStream);
+      _stopPolling();
+      _notify();
+      return false;
     } on Object catch (exception) {
       if (_disposed || generation != _castGeneration) return false;
       playback = CastPlaybackState.error;
-      error =
-          'Invio a ${device?.displayName ?? 'dispositivo'} '
-          'non riuscito: ${_describe(exception)}';
+      error = CastFailure(
+        CastFailureKind.send,
+        deviceName: device?.displayName,
+        details: _describe(exception),
+      );
       _stopPolling();
       _notify();
       return false;
@@ -314,7 +349,7 @@ class CastController extends ChangeNotifier {
       unawaited(_probeUntilPlaying(_castGeneration));
       return true;
     } on Object catch (exception) {
-      _failAction('Avvio', exception);
+      _failAction(exception);
       return false;
     }
   }
@@ -329,7 +364,7 @@ class CastController extends ChangeNotifier {
       _notify();
       return true;
     } on Object catch (exception) {
-      _failAction('Pausa', exception);
+      _failAction(exception);
       return false;
     }
   }
@@ -472,9 +507,7 @@ class CastController extends ChangeNotifier {
     firewallBusy = false;
     firewallRequired = !allowed;
     if (!allowed) {
-      error =
-          'Accesso alla rete non consentito. '
-          'Aggiungi una regola di ingresso per Expeditus in Windows Firewall.';
+      error = const CastFailure(CastFailureKind.firewallDenied);
     }
     _notify();
     return allowed;
@@ -500,9 +533,7 @@ class CastController extends ChangeNotifier {
     networkProfileBusy = false;
     networkProfileRequired = !fixed;
     if (!fixed) {
-      error =
-          'Impossibile modificare il tipo di rete. Apri Impostazioni > '
-          'Rete e Internet e imposta la rete come "Privata".';
+      error = const CastFailure(CastFailureKind.networkProfile);
     } else {
       _networkProfileChecked = false;
     }
@@ -679,18 +710,16 @@ class CastController extends ChangeNotifier {
           !_disposed) {
         _stopPolling();
         playback = CastPlaybackState.error;
-        error =
-            'Il dispositivo non risponde più. '
-            'Verifica che sia ancora acceso e sulla stessa rete.';
+        error = const CastFailure(CastFailureKind.unresponsive);
         _notify();
       }
     }
   }
 
-  void _failAction(String action, Object exception) {
+  void _failAction(Object exception) {
     if (_disposed) return;
     playback = CastPlaybackState.error;
-    error = '$action sul dispositivo non riuscito: ${_describe(exception)}';
+    error = CastFailure(CastFailureKind.action, details: _describe(exception));
     _notify();
   }
 
@@ -729,4 +758,8 @@ class CastController extends ChangeNotifier {
     unawaited(server.close());
     super.dispose();
   }
+}
+
+class _NoCastStream implements Exception {
+  const _NoCastStream();
 }

@@ -10,10 +10,7 @@ class TakeoutParser {
 
   static List<ImportedChannel> parse(String content) {
     final normalized = content.replaceAll('\r\n', '\n');
-    final rows = csv
-        .decode(normalized)
-        .where((row) => row.isNotEmpty)
-        .toList();
+    final rows = csv.decode(normalized).where((row) => row.isNotEmpty).toList();
     if (rows.isEmpty) return const [];
 
     var idIndex = -1;
@@ -75,8 +72,9 @@ class YouTubeResolver {
 
   static final _channelId = RegExp(r'UC[\w-]{22}');
   static final _externalId = RegExp(r'"externalId":"(UC[\w-]{22})"');
-  static final _canonicalChannel =
-      RegExp(r'youtube\.com/channel/(UC[\w-]{22})');
+  static final _canonicalChannel = RegExp(
+    r'youtube\.com/channel/(UC[\w-]{22})',
+  );
 
   static const _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -85,7 +83,7 @@ class YouTubeResolver {
   Future<ImportedChannel> resolve(String raw) async {
     final input = raw.trim();
     if (input.isEmpty) {
-      throw const FormatException('Riga vuota');
+      throw const FormatException('Empty line');
     }
 
     final direct = _channelId.firstMatch(input)?.group(0);
@@ -95,26 +93,29 @@ class YouTubeResolver {
 
     final uri = _toUri(input);
     if (uri == null) {
-      throw FormatException('Canale non riconosciuto: $input');
+      throw FormatException('Unrecognized channel: $input');
     }
 
-    final response = await _client.get(
-      uri,
-      headers: {
-        'User-Agent': _userAgent,
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    ).timeout(const Duration(seconds: 20));
+    final response = await _client
+        .get(
+          uri,
+          headers: {
+            'User-Agent': _userAgent,
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        )
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
-      throw FormatException('HTTP ${response.statusCode} per $input');
+      throw FormatException('HTTP ${response.statusCode} for $input');
     }
 
     final body = response.body;
-    final id = _externalId.firstMatch(body)?.group(1) ??
+    final id =
+        _externalId.firstMatch(body)?.group(1) ??
         _canonicalChannel.firstMatch(body)?.group(1);
     if (id == null) {
-      throw FormatException('ID canale non trovato per $input');
+      throw FormatException('Channel ID not found for $input');
     }
 
     return ImportedChannel(id: id, title: _channelTitle(body));
@@ -134,7 +135,7 @@ class YouTubeResolver {
 
   static Uri? _toUri(String input) {
     if (input.contains('watch?v=') || input.contains('youtu.be/')) {
-      throw FormatException('Questo è un video, non un canale: $input');
+      throw FormatException('This is a video, not a channel: $input');
     }
     if (input.startsWith('http://') || input.startsWith('https://')) {
       return Uri.tryParse(input);

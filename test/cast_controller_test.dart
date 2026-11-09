@@ -287,7 +287,11 @@ void main() {
 
       await controller.discover();
 
-      expect(controller.discoveryError, contains('multicast bloccato'));
+      expect(controller.discoveryError?.kind, CastFailureKind.discovery);
+      expect(
+        controller.discoveryError?.details,
+        contains('multicast bloccato'),
+      );
       expect(controller.hasDiscovered, isFalse);
       expect(controller.discovering, isFalse);
     },
@@ -310,7 +314,8 @@ void main() {
     expect(await failingController.connect(_device), isFalse);
     expect(failingController.isConnected, isFalse);
     expect(failingController.device, isNull);
-    expect(failingController.error, contains('Aggancio a TV Salotto'));
+    expect(failingController.error?.kind, CastFailureKind.connect);
+    expect(failingController.error?.deviceName, 'TV Salotto');
     expect(failing.closed, isTrue);
   });
 
@@ -373,8 +378,9 @@ void main() {
 
     expect(ok, isFalse);
     expect(controller.playback, CastPlaybackState.error);
-    expect(controller.error, contains('Invio a TV Salotto'));
-    expect(controller.error, contains('URI non accettato'));
+    expect(controller.error?.kind, CastFailureKind.send);
+    expect(controller.error?.deviceName, 'TV Salotto');
+    expect(controller.error?.details, contains('URI non accettato'));
   });
 
   test(
@@ -531,17 +537,20 @@ void main() {
     expect(transport.lastSeek, const Duration(seconds: 2));
   });
 
-  test('una rete pubblica è segnalata quando non ci sono dispositivi', () async {
-    discovery.devices = [];
-    networkProfile.statusValue = NetworkProfileStatus.public;
+  test(
+    'una rete pubblica è segnalata quando non ci sono dispositivi',
+    () async {
+      discovery.devices = [];
+      networkProfile.statusValue = NetworkProfileStatus.public;
 
-    await controller.discover();
-    await pumpEventQueue();
+      await controller.discover();
+      await pumpEventQueue();
 
-    expect(controller.devices, isEmpty);
-    expect(controller.networkProfileRequired, isTrue);
-    expect(networkProfile.statusCalls, 1);
-  });
+      expect(controller.devices, isEmpty);
+      expect(controller.networkProfileRequired, isTrue);
+      expect(networkProfile.statusCalls, 1);
+    },
+  );
 
   test('allowPrivateNetwork corregge la rete e pulisce il flag', () async {
     discovery.devices = [];
@@ -567,6 +576,6 @@ void main() {
 
     expect(await controller.allowPrivateNetwork(), isFalse);
     expect(controller.networkProfileRequired, isTrue);
-    expect(controller.error, contains('Rete e Internet'));
+    expect(controller.error?.kind, CastFailureKind.networkProfile);
   });
 }

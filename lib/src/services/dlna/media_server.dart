@@ -70,7 +70,7 @@ class MediaServer implements CastMediaServer {
   Uri get baseUri {
     final uri = _baseUri;
     if (uri == null) {
-      throw const CastMediaException('Server multimediale non avviato.');
+      throw const CastMediaException('Media server not started.');
     }
     return uri;
   }
@@ -97,8 +97,7 @@ class MediaServer implements CastMediaServer {
     final address = await _addressProvider();
     if (address == null) {
       throw const CastMediaException(
-        'Nessun indirizzo di rete locale trovato. '
-        'Collega il PC alla stessa rete del dispositivo.',
+        'No local network address found. Connect the PC to the same network as the device.',
       );
     }
 
@@ -115,7 +114,7 @@ class MediaServer implements CastMediaServer {
       host: '127.0.0.1',
       port: server.port,
     );
-    _log('in ascolto su $_baseUri');
+    _log('listening on $_baseUri');
 
     server.listen((request) {
       unawaited(_handle(request));
@@ -228,11 +227,11 @@ class MediaServer implements CastMediaServer {
         await _serveRemote(request, entry);
       }
     } on Object catch (error) {
-      _log('errore ${request.uri}: $error');
+      _log('error ${request.uri}: $error');
       try {
         response.statusCode = HttpStatus.badGateway;
         response.headers.contentType = ContentType.text;
-        response.write('Stream non disponibile.');
+        response.write('Stream unavailable.');
       } on Object {
         // The response may already be committed; nothing else to do.
       }
@@ -491,7 +490,7 @@ class MediaServer implements CastMediaServer {
     await for (final chunk in response) {
       builder.add(chunk);
       if (builder.length > limit) {
-        throw const CastMediaException('Playlist troppo grande.');
+        throw const CastMediaException('Playlist too large.');
       }
     }
     return builder.takeBytes();
