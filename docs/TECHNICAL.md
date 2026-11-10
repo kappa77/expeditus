@@ -56,7 +56,7 @@ Key modules:
 | `lib/src/services/dlna/dlna_metadata.dart` | DIDL-Lite metadata and MIME mapping |
 | `lib/src/services/dlna/media_server.dart` | Local HTTP proxy for files, MP4 and HLS |
 | `lib/src/services/dlna/windows_firewall.dart` | Inbound firewall rule detection and UAC-assisted creation |
-| `lib/src/state/cast_controller.dart` | Cast session, transport polling and drift correction |
+| `lib/src/state/cast_controller.dart` | Cast session and transport polling |
 | `lib/src/ui/cast_dialog.dart` | Device picker, discovery progress and errors |
 | `lib/src/ui/cast_waiting_cover.dart` | Poster with play symbol while remote playback is not confirmed |
 | `lib/src/services/update_feed_client.dart` | GitHub Releases feed, ETag cache, redirect and response limits |
@@ -235,15 +235,22 @@ changed without this explicit user action.
 
 Once connected, `PlayerPage` casts every video it opens and calls
 `setVolume(0)` on the local player. Local playback is paused while the
-renderer loads; it resumes from the same position only when the renderer
-reports `PLAYING`. This avoids losing the first seconds on slow TVs. The
+renderer loads; when the renderer reports `PLAYING`, the app reads its current
+position and seeks the muted local player there before resuming. This avoids
+losing the first seconds on slow TVs and starts both clocks together. The
 local audio stays muted for the whole connection: buffering, playback errors
 and transport polling failures never restore it. The only ways to hear audio
 locally are disconnecting or choosing **Riproduci solo qui**, which closes the
 session and resumes local playback unmuted. Local play/pause events are
-mirrored to the renderer, and the local position is compared with
-`GetPositionInfo` every five seconds; a drift above four seconds triggers a
-remote `Seek`.
+mirrored to the renderer, as are explicit seeks. SponsorBlock skips move the
+local player to the segment end and forward the same target to the renderer,
+but only after `GetPositionInfo` confirms that the renderer has not already
+passed it, so a TV running ahead is never rewound. The renderer is never
+periodically sought to match local playback: local buffering and position
+query latency could otherwise cause visible rewinds on the TV. The clocks can
+still drift after the handshake; SponsorBlock and progress use the local
+clock, so a local player that falls behind may trigger a skip late, or after
+the renderer has already left the segment.
 Closing the player stops the renderer but keeps the connection, so the next
 video is cast again. Disconnecting closes the transport and the media server.
 
@@ -364,6 +371,12 @@ flutter test integration_test_live/live_youtube_test.dart -d windows --dart-defi
 # Live DLNA testing against a real TV is manual only: it is not part of the
 # repository test suite and is never run by CI.
 ```
+
+Live DLNA verification was performed on a moto g(30) (Android 12) with a
+Samsung UE40MU6470. Discovery, casting, explicit seeks to 3:07 and 8:12, and
+a SponsorBlock skip from 11:40 to 12:46 worked without periodic replays or
+backward jumps. Initial buffering and handshake also completed without the
+video restarting.
 
 ## Limits and risks
 

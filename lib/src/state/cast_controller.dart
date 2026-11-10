@@ -45,8 +45,7 @@ typedef CastStreamResolver = Future<ResolvedStream> Function(String videoId);
 /// and best-effort transport polling.
 ///
 /// The controller is intentionally independent of the player: the player asks
-/// it to cast a video, mirrors local play/pause events, and reports its
-/// position for drift correction.
+/// it to cast a video and mirrors local play/pause and explicit seek events.
 class CastController extends ChangeNotifier {
   CastController({
     DlnaDiscovery? discovery,
@@ -101,8 +100,6 @@ class CastController extends ChangeNotifier {
   Timer? _pollTimer;
   int _pollFailures = 0;
   int _castGeneration = 0;
-  DateTime? _lastSync;
-  bool _syncInFlight = false;
   Future<void>? _pendingStop;
   bool _disposed = false;
 
@@ -389,48 +386,54 @@ class CastController extends ChangeNotifier {
     }
   }
 
-  /// Seeks the renderer immediately, for local seeking and SponsorBlock skips.
+  /// Seeks the renderer immediately, for explicit local seeks.
   Future<bool> seekTo(Duration position) async {
     final transport = _transport;
     if (_disposed || !isCasting || transport == null) return false;
     try {
       await transport.seek(position);
-      _lastSync = DateTime.now();
       return true;
     } on Object {
       return false;
     }
   }
 
-  /// Corrects remote drift against the local player's clock. Called often by
-  /// the player; the work is throttled and never throws.
-  Future<void> syncTo(Duration localPosition) async {
-    if (_disposed ||
-        !isCasting ||
-        playback != CastPlaybackState.playing ||
-        _syncInFlight) {
-      return;
-    }
-    final now = DateTime.now();
-    final last = _lastSync;
-    if (last != null && now.difference(last) < const Duration(seconds: 5)) {
-      return;
-    }
-    _lastSync = now;
-    _syncInFlight = true;
+  /// Advances the renderer to [position] only if it has not reached it yet.
+  ///
+  /// Used by SponsorBlock: the local player drives the skip, but a renderer
+  /// that is ahead of it must not be sent backwards.
+  Future<bool> seekForwardTo(Duration position) async {
+    final transport = _transport;
+    if (_disposed || !isCasting || transport == null) return false;
+    final generation = _castGeneration;
     try {
-      final transport = _transport;
-      if (transport == null) return;
       final remote = await transport.getPosition();
-      if (_disposed || !isCasting) return;
-      final drift = (remote - localPosition).abs();
-      if (drift > const Duration(seconds: 4)) {
-        await transport.seek(localPosition);
+      if (_disposed || generation != _castGeneration || !isCasting) {
+        return false;
       }
+      final tolerance = const Duration(milliseconds: 500);
+      if (remote >= position - tolerance) return false;
+      await transport.seek(position);
+      return true;
     } on Object {
-      // Drift correction is best effort.
-    } finally {
-      _syncInFlight = false;
+      return false;
+    }
+  }
+
+  /// Best-effort renderer position, used to align the muted local player when
+  /// the renderer confirms playback. Returns null when it is unavailable.
+  Future<Duration?> getRemotePosition() async {
+    final transport = _transport;
+    if (_disposed || !isCasting || transport == null) return null;
+    final generation = _castGeneration;
+    try {
+      final position = await transport.getPosition();
+      if (_disposed || generation != _castGeneration || !isCasting) {
+        return null;
+      }
+      return position;
+    } on Object {
+      return null;
     }
   }
 

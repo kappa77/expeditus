@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.1
+
+### Fixed
+
+- DLNA: removed periodic drift correction, which could seek the TV backwards
+  or cause visible replays during buffering and slow position queries.
+- DLNA: the muted local player now resumes from the renderer's current
+  position after the handshake instead of the pre-cast position.
+- SponsorBlock: skips only seek the renderer forward, so a TV that is already
+  past the segment is never rewound.
+
 ## 2.5.0
 
 ### Added

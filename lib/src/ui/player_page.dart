@@ -319,10 +319,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       }
     }
     final cast = widget.state.castController;
-    if (cast.isCasting && _castMuted) {
-      unawaited(cast.syncTo(position));
-    }
-
     final duration = _duration;
     if (duration != null &&
         duration.inMilliseconds > 0 &&
@@ -337,7 +333,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           _lastSkippedEndMs = segment.end.inMilliseconds;
           _player.seek(segment.end);
           if (cast.isCasting && _castMuted) {
-            unawaited(cast.seekTo(segment.end));
+            unawaited(cast.seekForwardTo(segment.end));
           }
           _toast(context.l10n.sponsorSkipped);
         }
@@ -372,9 +368,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     final cast = widget.state.castController;
     if (cast.remotePlaying && _castMuted && _resumeLocalWhenRemoteStarts) {
       _resumeLocalWhenRemoteStarts = false;
-      if (!_player.state.playing) {
-        unawaited(_player.play());
-      }
+      unawaited(_resumeLocalAtCastPosition(cast));
     }
     final failure = cast.error;
     final castError = failure == null
@@ -398,6 +392,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       unawaited(_restoreLocalAudio());
     }
     setState(() {});
+  }
+
+  /// Resumes the muted local player at the renderer's current position.
+  ///
+  /// The renderer starts while local playback is paused, so resuming from the
+  /// original position would leave the local clock behind the TV for the rest
+  /// of the video.
+  Future<void> _resumeLocalAtCastPosition(CastController cast) async {
+    final remote = await cast.getRemotePosition();
+    if (!mounted || !_castMuted || !cast.remotePlaying) return;
+    if (remote != null && remote > Duration.zero) {
+      await _player.seek(remote);
+      if (!mounted) return;
+    }
+    if (!_player.state.playing) {
+      unawaited(_player.play());
+    }
   }
 
   Future<void> _openCastDialog() async {

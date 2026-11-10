@@ -499,6 +499,48 @@ void main() {
     expect(transport.lastSeek, const Duration(seconds: 42));
   });
 
+  test('seekForwardTo non riavvolge un renderer già oltre il salto', () async {
+    await connect();
+    await controller.castVideo(
+      video: _video,
+      fallbackUri: Uri.parse('https://fallback.example/video.mp4'),
+    );
+    await waitFor(() => controller.playback == CastPlaybackState.playing);
+    transport.calls.clear();
+    transport.position = const Duration(seconds: 30);
+
+    expect(
+      await controller.seekForwardTo(const Duration(seconds: 20)),
+      isFalse,
+    );
+    expect(transport.calls, contains('getPosition'));
+    expect(transport.calls, isNot(contains('seek')));
+  });
+
+  test('seekForwardTo porta avanti un renderer ancora nel segmento', () async {
+    await connect();
+    await controller.castVideo(
+      video: _video,
+      fallbackUri: Uri.parse('https://fallback.example/video.mp4'),
+    );
+    await waitFor(() => controller.playback == CastPlaybackState.playing);
+    transport.position = const Duration(seconds: 5);
+
+    expect(await controller.seekForwardTo(const Duration(seconds: 20)), isTrue);
+    expect(transport.lastSeek, const Duration(seconds: 20));
+  });
+
+  test('getRemotePosition espone la posizione della TV', () async {
+    await connect();
+    await controller.castVideo(
+      video: _video,
+      fallbackUri: Uri.parse('https://fallback.example/video.mp4'),
+    );
+    transport.position = const Duration(seconds: 12);
+
+    expect(await controller.getRemotePosition(), const Duration(seconds: 12));
+  });
+
   test(
     'se il media server non viene contattato propone la regola firewall',
     () async {
@@ -523,18 +565,17 @@ void main() {
     },
   );
 
-  test('syncTo corregge uno scostamento oltre la soglia', () async {
+  test('il polling non modifica la posizione del renderer', () async {
     await connect();
     await controller.castVideo(
       video: _video,
       fallbackUri: Uri.parse('https://fallback.example/video.mp4'),
     );
     await waitFor(() => controller.playback == CastPlaybackState.playing);
-    transport.position = const Duration(seconds: 30);
-
-    await controller.syncTo(const Duration(seconds: 2));
-
-    expect(transport.lastSeek, const Duration(seconds: 2));
+    transport.calls.clear();
+    await Future<void>.delayed(const Duration(seconds: 5));
+    expect(transport.calls, contains('getTransportInfo'));
+    expect(transport.calls, isNot(contains('seek')));
   });
 
   test(
