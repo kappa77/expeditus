@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.2
+
+### Fixed
+
+- Windows: use the Expeditus app icon for the title bar, taskbar, executable
+  and installer instead of the default Flutter logo.
+
 ## 2.5.1
 
 ### Fixed
