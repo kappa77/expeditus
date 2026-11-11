@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.4
+
+### Fixed
+
+- Android: after the app stays in the background, playback resumes from the
+  exact paused position, even when the decoder has reset. The saved second is
+  applied while the media loads, avoiding the post-open seek and its delay.
+
 ## 2.5.3
 
 ### Fixed

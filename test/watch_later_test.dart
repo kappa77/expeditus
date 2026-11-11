@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:expeditus/src/data/database.dart';
 import 'package:expeditus/src/models.dart';
+import 'package:expeditus/src/state/app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -85,5 +86,20 @@ void main() {
     final stored = (await db.videosForChannel('c1')).single;
     expect(stored.watchLater, isFalse);
     expect(stored.watchLaterAt, isNull);
+  });
+
+  test('la posizione più recente resta disponibile nella sessione', () async {
+    final item = video('a1', 100);
+    await db.upsertVideo(item);
+    final state = AppState(db);
+    addTearDown(state.dispose);
+
+    expect(state.progressFor(item), 0);
+    await state.saveProgress(item.id, 137);
+
+    // The feed may still hold the old VideoItem, but the player must resume
+    // from the newest position immediately.
+    expect(state.progressFor(item), 137);
+    expect((await db.videosForChannel('c1')).single.progressSeconds, 137);
   });
 }

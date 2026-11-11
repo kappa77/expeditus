@@ -570,8 +570,16 @@ class AppState extends ChangeNotifier {
     await reload();
   }
 
+  /// Newest position seen in this session, even before the feed reloads.
+  final Map<String, int> _progressInSession = {};
+
+  int progressFor(VideoItem video) {
+    return _progressInSession[video.id] ?? video.progressSeconds;
+  }
+
   Future<void> saveProgress(String videoId, int seconds) async {
     if (seconds <= 0) return;
+    _progressInSession[videoId] = seconds;
     await db.setProgress(videoId, seconds);
   }
 
