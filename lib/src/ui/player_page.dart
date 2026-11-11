@@ -178,6 +178,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   Future<void> _showOutline() async {
     if (widget.video.isLocal) return;
+    // Freeze the position when the user opens the outline, before any await
+    // (chapter fetching), so a bookmark added from it points at this moment.
+    final position = _player.state.position;
     if (!_chaptersLoaded) await _loadChapters();
     if (!mounted) return;
     final target = await showDialog<Duration>(
@@ -185,7 +188,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       builder: (_) => VideoOutlineDialog(
         video: widget.video,
         chapters: _chapters,
-        position: _player.state.position,
+        position: position,
         state: widget.state,
       ),
     );
@@ -200,13 +203,12 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   Future<void> _addBookmark() async {
     if (widget.video.isLocal) return;
+    // Capture the position before opening the dialog: the note must point at
+    // the moment the button was clicked, not at the moment it is saved.
+    final positionSeconds = _player.state.position.inSeconds;
     final note = await showBookmarkNoteDialog(context);
     if (note == null || note.isEmpty) return;
-    await widget.state.addBookmark(
-      widget.video.id,
-      _player.state.position.inSeconds,
-      note,
-    );
+    await widget.state.addBookmark(widget.video.id, positionSeconds, note);
     if (mounted) _toast(context.l10n.bookmarkSaved);
   }
 

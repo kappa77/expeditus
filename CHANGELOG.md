@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.3
+
+### Fixed
+
+- Bookmarks and notes now use the playback position at the moment the add-note
+  action or the chapters and bookmarks page is opened, instead of the position
+  when the note is saved.
+
 ## 2.5.2
 
 ### Fixed
