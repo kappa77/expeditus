@@ -111,6 +111,38 @@ Expeditus does not load the YouTube web player. `youtube_explode_dart` resolves 
 
 When a video has a local download, the player opens the local file and labels the stream **Offline**; otherwise it resolves a direct URL. SponsorBlock segments are still fetched when available.
 
+On Android, local stream resolution races iOS and Android SDK-less without a
+watch-page request. A ready MP4 waits at most another 750 ms for an HLS result;
+the slower extraction is then canceled and its HTTP client closed. Desktop
+first tries iOS without a watch-page request. The full iOS extraction and then
+Android SDK-less with a watch page are fallbacks. Each attempt has a
+12-second timeout and closes its extractor/HTTP client on success, failure or
+timeout. Closing `PlayerPage` cancels pending local stream resolution. HLS with
+audio and video is preferred; Android selects the highest available resolution
+up to 720p (or the smallest HLS rendition if all exceed that limit). Desktop has
+no resolution cap. A quality label comes from the selected stream's manifest;
+a 720p cap does not upscale a 360p fallback. Separate video/audio tracks are not
+currently combined.
+
+`ResumablePlayer` keeps a stable position independently of native clock resets.
+The standard video controls and fullscreen controls use the same play/pause/seek
+overrides. Before resuming a remote stream paused for at least two minutes, or
+whose `expire` time is within 30 seconds, it resolves a fresh URL and opens it
+with `Media.start` at the pause point. Brief pauses reuse the URL and restore the
+decoder's position if needed. Local files and the muted DLNA clock do not renew
+URLs. A manual pause remains paused when the app returns to the foreground.
+Pending resumes are invalidated by pause, seek, stop or disposal, and a load
+that finishes in the background stays paused.
+
+One video controller is created per player, including across retries. The
+Android demuxer cache budget is 16 MiB forward and 16 MiB backward, compared with
+32 MiB each on desktop. These limits are not a limit on total process memory:
+decoder buffers, textures, Dart objects and native allocations use additional
+memory. All page subscriptions and the player are released on close. The
+[Motorola device regression](ANDROID_PLAYBACK_TEST.md) records startup, pause,
+real Activity transitions and repeated resource-release measurements. Short
+regression runs cannot exclude native leaks during longer sessions.
+
 SponsorBlock segments are fetched from `sponsor.ajay.app` and skipped during playback. The player also supports:
 
 - playback speed from 0.25× to 3.50× in 0.25 steps, persisted in `settings`;
@@ -381,7 +413,7 @@ video restarting.
 ## Limits and risks
 
 - RSS exposes at most 15 uploads per channel. Deeper history needs the YouTube Data API, yt-dlp, or another extractor.
-- The fallback muxed stream is limited to 360p; HLS is used when available. 1080p/4K would require an optional yt-dlp/ffmpeg resolver.
+- The fallback muxed stream is usually 360p; HLS is preferred when available, up to 720p on Android. Available quality depends on the extracted manifest; separate DASH audio/video tracks are not combined.
 - Tags are not available for every video and cost one watch-page request per uncached video.
 - Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
 - Local MP4 files must remain at the path where they were added; the library stores the path, not a copy.

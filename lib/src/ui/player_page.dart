@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
+import '../services/resumable_player.dart';
 import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../state/cast_controller.dart';
@@ -42,8 +43,9 @@ class PlayerPage extends StatefulWidget {
 }
 
 class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
-  late final Player _player;
-  VideoController? _controller;
+  late final ResumablePlayer _player;
+  late final VideoController _controller;
+  final StreamResolver _streamResolver = StreamResolver();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   List<SponsorSegment> _segments = const [];
   Duration? _duration;
@@ -77,13 +79,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   DateTime? _castStartedAt;
   bool _castInFlight = false;
   bool _resumeLocalWhenRemoteStarts = false;
-  Duration _lastStablePosition = Duration.zero;
   int _lastPersistedSeconds = -1;
-  Duration? _backgroundPosition;
   bool _wasPlayingBeforeBackground = false;
   bool _pausedForBackground = false;
   Future<void>? _backgroundPause;
   bool _inBackground = false;
+  bool _opening = false;
+  bool _retrying = false;
 
   @override
   void initState() {
@@ -91,7 +93,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     MediaKit.ensureInitialized();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handleGlobalKey);
-    _player = Player();
+    _player = ResumablePlayer(
+      configuration: PlayerConfiguration(
+        // media_kit applies this limit to both forward and backward caches.
+        bufferSize: (isAndroid ? 16 : 32) * 1024 * 1024,
+      ),
+      refreshMedia: _refreshMedia,
+      onRefreshError: _showPlaybackError,
+      canPlay: () =>
+          mounted &&
+          (!_inBackground ||
+              (widget.state.castController.isCasting && _castMuted)),
+      canRefresh: () =>
+          !widget.state.castController.isCasting && _localPath == null,
+    );
+    // One controller per player: each controller registers native resources
+    // and listeners that are released only when the player is disposed.
+    _controller = VideoController(_player);
     _rate = _initialPlaybackRate();
     _seekAccumulator = SeekAccumulator(
       debounce: const Duration(milliseconds: 300),
@@ -109,20 +127,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _subscriptions.add(_player.stream.position.listen(_onPosition));
     _subscriptions.add(
       _player.stream.duration.listen((value) {
+        if (!mounted || value <= Duration.zero) return;
         _duration = value;
         _uiDuration.value = value;
       }),
     );
     _subscriptions.add(
       _player.stream.completed.listen((completed) {
-        if (completed) _markWatched();
+        if (completed && !_player.isOpening) _markWatched();
       }),
     );
     // Persist the exact position as soon as playback stops, so pausing and
     // leaving the app never loses the last few seconds.
     _subscriptions.add(
       _player.stream.playing.listen((playing) {
-        if (!playing && _ready) unawaited(_persistProgress());
+        if (!playing && _ready && !_player.isOpening) {
+          unawaited(_persistProgress());
+        }
       }),
     );
     _uiPosition.value = Duration.zero;
@@ -194,7 +215,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (widget.video.isLocal) return;
     // Freeze the position when the user opens the outline, before any await
     // (chapter fetching), so a bookmark added from it points at this moment.
-    final position = _player.state.position;
+    final position = _playbackPosition;
     if (!_chaptersLoaded) await _loadChapters();
     if (!mounted) return;
     final target = await showDialog<Duration>(
@@ -219,7 +240,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (widget.video.isLocal) return;
     // Capture the position before opening the dialog: the note must point at
     // the moment the button was clicked, not at the moment it is saved.
-    final positionSeconds = _player.state.position.inSeconds;
+    final positionSeconds = _playbackPosition.inSeconds;
     final note = await showBookmarkNoteDialog(context);
     if (note == null || note.isEmpty) return;
     await widget.state.addBookmark(widget.video.id, positionSeconds, note);
@@ -227,6 +248,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Future<void> _open({Duration? resumeAt}) async {
+    if (_opening || !mounted) return;
+    _opening = true;
     final l10n = context.l10n;
     try {
       Uri? mediaUri;
@@ -252,7 +275,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       }
 
       if (mediaUri == null) {
-        final resolve = widget.resolver ?? StreamResolver.resolve;
+        final resolve = widget.resolver ?? _streamResolver.resolveVideo;
         final stream = await resolve(widget.video.id);
         mediaUri = stream.url;
         quality = stream.kind == 'audio'
@@ -266,22 +289,20 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       _mediaUri = mediaUri;
       _streamKind = kind;
       _localPath = localPathUsed;
-      final controller = VideoController(_player);
-      _controller = controller;
       // Apply the resume point while the media loads instead of seeking after
       // playback starts. This avoids the initial jump and the extra delay.
       final startAt = _resumeStart(resumeAt);
-      _lastStablePosition = startAt ?? Duration.zero;
       _lastPersistedSeconds = resumeAt == null
           ? (startAt?.inSeconds ?? -1)
           : -1;
-      _uiPosition.value = _lastStablePosition;
+      _uiPosition.value = startAt ?? Duration.zero;
       await _player.open(
         Media(mediaUri.toString(), start: startAt),
         play: true,
       );
       if (!mounted) return;
       await _player.setRate(_rate);
+      if (!mounted) return;
       if (startAt != null) {
         unawaited(_persistProgress(startAt));
         _toast(l10n.resumedFrom(formatDuration(startAt.inSeconds)));
@@ -292,26 +313,50 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         // the local audio never overlaps the renderer.
         if (!_castMuted) _volumeBeforeCast = _player.state.volume;
         await _player.setVolume(0);
+        if (!mounted) return;
         _castMuted = true;
         if (mounted) setState(() {});
       }
       if (!widget.video.isLocal) {
         await widget.state.markSeen(widget.video);
+        if (!mounted) return;
       }
       if (widget.state.castController.isConnected) {
         await _startCasting();
+        if (!mounted) return;
       }
       if (!widget.video.isLocal) {
         await _loadSponsorSegments();
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = _friendlyError(e, context.l10n);
-          _errorDetails = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
+      _showPlaybackError(e);
+    } finally {
+      _opening = false;
     }
+  }
+
+  Future<Media> _refreshMedia(Duration position) async {
+    final resolve = widget.resolver ?? _streamResolver.resolveVideo;
+    final stream = await resolve(widget.video.id);
+    if (!mounted) throw StateError('Player closed');
+    setState(() {
+      _mediaUri = stream.url;
+      _streamKind = stream.kind;
+      _quality = stream.kind == 'audio'
+          ? context.l10n.audioOnlyQuality
+          : stream.quality;
+      _error = null;
+      _errorDetails = null;
+    });
+    return Media(stream.url.toString(), start: position);
+  }
+
+  void _showPlaybackError(Object error) {
+    if (!mounted) return;
+    setState(() {
+      _error = _friendlyError(error, context.l10n);
+      _errorDetails = error.toString().replaceFirst('Exception: ', '');
+    });
   }
 
   Future<void> _loadSponsorSegments() async {
@@ -330,8 +375,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   void _onPosition(Duration position) {
-    if (!mounted) return;
-    _lastStablePosition = position;
+    if (!mounted || _player.isOpening || position != _player.position) return;
     _uiPosition.value = position;
     if (!widget.video.isLocal) {
       final now = DateTime.now();
@@ -370,8 +414,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     final total = widget.video.durationSeconds;
     bool atEnd(int seconds) =>
         total != null && total > 1 && seconds >= total - 1;
-    if (resumeAt != null && resumeAt > Duration.zero) {
-      return atEnd(resumeAt.inSeconds) ? null : resumeAt;
+    if (resumeAt != null) {
+      return resumeAt <= Duration.zero || atEnd(resumeAt.inSeconds)
+          ? null
+          : resumeAt;
     }
     if (widget.video.isLocal) return null;
     final saved = widget.state.progressFor(widget.video);
@@ -380,10 +426,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   /// Latest known position, resilient to a player reset while backgrounded.
-  Duration get _playbackPosition {
-    final current = _player.state.position;
-    return current > Duration.zero ? current : _lastStablePosition;
-  }
+  Duration get _playbackPosition => _player.position;
 
   Future<void> _persistProgress([Duration? at]) async {
     if (widget.video.isLocal) return;
@@ -397,9 +440,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   void _enterBackground() {
     if (_inBackground) return;
     _inBackground = true;
-    _backgroundPosition = _playbackPosition;
-    _wasPlayingBeforeBackground = _player.state.playing;
-    unawaited(_persistProgress(_backgroundPosition));
+    _wasPlayingBeforeBackground =
+        _player.state.playing || (!_ready && _opening);
+    unawaited(_persistProgress());
     // While casting, the local player is a muted clock and the TV owns
     // playback: leave it alone.
     final cast = widget.state.castController;
@@ -423,11 +466,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Future<void> _leaveBackground() async {
     if (!_inBackground) return;
     _inBackground = false;
-    final target = _backgroundPosition;
     final wasPlaying = _wasPlayingBeforeBackground;
     final pausedByUs = _pausedForBackground;
     final pause = _backgroundPause;
-    _backgroundPosition = null;
     _wasPlayingBeforeBackground = false;
     _pausedForBackground = false;
     _backgroundPause = null;
@@ -437,19 +478,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (!mounted || !_ready || _inBackground) return;
     final cast = widget.state.castController;
     if (cast.isCasting && _castMuted) return;
-    // Some Android devices reset the decoder after a long time in the
-    // background: restore the exact paused position before continuing.
-    if (target != null && target > Duration.zero) {
-      final current = _player.state.position;
-      if ((current - target).inMilliseconds.abs() > 500) {
-        try {
-          await _player.seek(target);
-        } on Object {
-          // The player may be closing.
-        }
-      }
-    }
-    // Do not resume audio if the app went back to the background meanwhile.
+    // ResumablePlayer restores the pause point and renews stale URLs before
+    // playing. Manually paused videos stay paused when returning to the app.
     if (!mounted || _inBackground) return;
     if (wasPlaying && pausedByUs && !_player.state.playing) {
       try {
@@ -564,7 +594,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     final mediaUri = _mediaUri;
     if (!mounted || !cast.isConnected || mediaUri == null) return;
 
-    final startAt = _player.state.position;
+    final startAt = _playbackPosition;
     if (!_castMuted) _volumeBeforeCast = _player.state.volume;
     await _player.setVolume(0);
     if (!mounted) return;
@@ -628,7 +658,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (!_castMuted) _volumeBeforeCast = _player.state.volume;
     await _player.setVolume(0);
     if (!mounted) return;
-    final startAt = _player.state.position;
+    final startAt = _playbackPosition;
     _castMuted = true;
     _resumeLocalWhenRemoteStarts = true;
     _castStartedAt = DateTime.now();
@@ -705,22 +735,30 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Future<void> _retry() async {
-    final cast = widget.state.castController;
-    if (cast.isCasting && cast.currentVideo?.id == widget.video.id) {
-      await cast.stopPlayback(expectedVideoId: widget.video.id);
+    if (_opening || _retrying || !mounted) return;
+    _retrying = true;
+    try {
+      final resumeAt = _playbackPosition;
+      final cast = widget.state.castController;
+      if (cast.isCasting && cast.currentVideo?.id == widget.video.id) {
+        await cast.stopPlayback(expectedVideoId: widget.video.id);
+        if (!mounted) return;
+      }
+      setState(() {
+        _error = null;
+        _errorDetails = null;
+        _ready = false;
+        _lastSkippedEndMs = null;
+        _mediaUri = null;
+        _streamKind = null;
+        _localPath = null;
+      });
+      await _player.stop();
+      if (!mounted) return;
+      await _open(resumeAt: resumeAt);
+    } finally {
+      _retrying = false;
     }
-    setState(() {
-      _error = null;
-      _errorDetails = null;
-      _ready = false;
-      _lastSkippedEndMs = null;
-      _mediaUri = null;
-      _streamKind = null;
-      _localPath = null;
-    });
-    final resumeAt = _playbackPosition;
-    await _player.stop();
-    await _open(resumeAt: resumeAt);
   }
 
   Future<void> _openExternal() async {
@@ -757,6 +795,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _streamResolver.close();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
@@ -771,8 +810,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _seekAccumulator.dispose();
     for (final subscription in _subscriptions) {
-      subscription.cancel();
+      unawaited(subscription.cancel());
     }
+    _subscriptions.clear();
     unawaited(_player.dispose());
     super.dispose();
   }
@@ -797,7 +837,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (!_ready) return;
     _seekAccumulator.add(
       Duration(seconds: seconds),
-      base: _player.state.position,
+      base: _playbackPosition,
       max: _duration,
     );
     setState(() {});
@@ -852,8 +892,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         ),
       );
     }
-    if (_controller == null) return const SizedBox.shrink();
-
     final showCastCover =
         _castMuted && cast.isConnected && cast.isCasting && !cast.remotePlaying;
     return Stack(
@@ -876,7 +914,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           ),
           child: Video(
             key: ValueKey('player-video-$_videoEpoch'),
-            controller: _controller!,
+            controller: _controller,
             controls: MaterialVideoControls,
             fit: BoxFit.contain,
             // PlayerPage owns the exact pause/resume position; media_kit's

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5.5
+
+### Fixed
+
+- Playback: renew expired streams and streams paused for at least two minutes
+  before resuming, preserving the pause point even if Android resets the decoder.
+- Stream startup: race the fast YouTube clients on Android, briefly prefer a
+  nearby HLS result, and close the slower extraction instead of waiting for it.
+  Fallback attempts time out and release their HTTP connections.
+- Android: prefer HLS up to 720p and reduce each demuxer cache limit to 16 MiB.
+  Quality labels still describe the selected stream, including 360p fallbacks.
+- Reuse one video controller across retries, cancel stream resolution on page
+  close, and prevent delayed loads from starting playback in the background.
+
 ## 2.5.4
 
 ### Fixed
