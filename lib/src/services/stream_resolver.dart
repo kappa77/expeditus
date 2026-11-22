@@ -277,14 +277,6 @@ class StreamResolver {
     bool preferMuxed = false,
     String? preferredLanguage,
   }) {
-    final split = _selectSplitStream(
-      manifest,
-      maxHeight: maxHeight,
-      preferredLanguage: preferredLanguage,
-      requireMultipleAudio: true,
-    );
-    if (split != null) return split;
-
     if (preferMuxed && manifest.muxed.isNotEmpty) {
       final stream = manifest.muxed.withHighestBitrate();
       return ResolvedStream(
@@ -336,7 +328,6 @@ class StreamResolver {
       manifest,
       maxHeight: maxHeight,
       preferredLanguage: preferredLanguage,
-      requireMultipleAudio: false,
     );
     if (fallback != null) return fallback;
 
@@ -355,14 +346,8 @@ class StreamResolver {
     StreamManifest manifest, {
     required int? maxHeight,
     required String? preferredLanguage,
-    required bool requireMultipleAudio,
   }) {
     if (manifest.videoOnly.isEmpty || manifest.audioOnly.isEmpty) return null;
-    final languageIds = manifest.audioOnly
-        .map((stream) => stream.audioTrack?.id)
-        .whereType<String>()
-        .toSet();
-    if (requireMultipleAudio && languageIds.length < 2) return null;
 
     final video = _selectVideo(manifest.videoOnly, maxHeight: maxHeight);
     final audio = _selectAudio(
@@ -395,9 +380,19 @@ class StreamResolver {
         a.videoResolution.height,
       );
       if (resolution != 0) return fits ? resolution : -resolution;
+      final codec = _videoCodecRank(b).compareTo(_videoCodecRank(a));
+      if (codec != 0) return codec;
       return b.bitrate.compareTo(a.bitrate);
     });
     return candidates.first;
+  }
+
+  static int _videoCodecRank(VideoOnlyStreamInfo stream) {
+    final codec = stream.videoCodec.toLowerCase();
+    if (codec.startsWith('avc1') || codec.contains('h264')) return 3;
+    if (codec.startsWith('vp9') || codec.contains('vp09')) return 2;
+    if (codec.startsWith('av01')) return 1;
+    return 0;
   }
 
   static AudioOnlyStreamInfo _selectAudio(

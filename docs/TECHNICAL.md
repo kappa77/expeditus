@@ -127,13 +127,17 @@ a 720p cap does not upscale a 360p fallback.
 The `youtube_explode_dart` player requests are localized with the application
 language (`hl`/`gl`) instead of the library's hard-coded English context. This
 makes YouTube mark the original audio track as default rather than the English
-auto-dub. When a video exposes several audio languages and separate video-only
-tracks, Expeditus prefers a video-only rendition plus the original audio track
-(selected by `displayName`/`audioIsDefault`/language) and attaches the audio
-with media_kit's `AudioTrack.uri` / mpv `audio-add`. This is also the fallback
-for videos where YouTube offers no muxed or HLS stream at all; without it the
-resolver would have selected an audio-only stream. The external audio URL is
-refreshed together with the video URL on resume/recovery.
+auto-dub. Muxed and HLS streams remain the first choice for compatibility.
+
+When YouTube offers no muxed or HLS stream at all, Expeditus combines a
+video-only rendition with the original audio track (selected by
+`displayName`/`audioIsDefault`/language). H.264 is preferred over VP9 and AV1
+for the video-only rendition. The audio is attached with media_kit's
+`AudioTrack.uri` / mpv `audio-add`, and its URL is refreshed together with the
+video URL on resume/recovery. Without this fallback the resolver would have
+selected an audio-only stream. Split streams from the Android player request
+can return HTTP 403 when consumed by mpv, so a muxed stream is always used when
+one is available.
 
 `ResumablePlayer` keeps a stable position independently of native clock resets.
 The standard video controls and fullscreen controls use the same play/pause/seek

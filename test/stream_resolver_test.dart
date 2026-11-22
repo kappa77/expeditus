@@ -12,14 +12,18 @@ MuxedStreamInfo _muxed(int height) => MuxedStreamInfo.fromJson({
   'container': {'name': 'mp4'},
 });
 
-VideoOnlyStreamInfo _videoOnly(int height, {int? bitrate}) =>
-    VideoOnlyStreamInfo.fromJson({
-      ..._videoJson(height, bitrate: bitrate),
-      'url': 'https://example.com/$height-video.mp4',
-      'container': {'name': 'mp4'},
-      'codec': 'video/mp4',
-      'fragments': <dynamic>[],
-    });
+VideoOnlyStreamInfo _videoOnly(
+  int height, {
+  int? bitrate,
+  String codec = 'avc1.640028',
+}) => VideoOnlyStreamInfo.fromJson({
+  ..._videoJson(height, bitrate: bitrate),
+  'url': 'https://example.com/$height-$codec-video.mp4',
+  'container': {'name': 'mp4'},
+  'codec': 'video/mp4',
+  'videoCodec': codec,
+  'fragments': <dynamic>[],
+});
 
 AudioOnlyStreamInfo _audio(
   String id,
@@ -349,7 +353,7 @@ void main() {
     );
     expect(stream.kind, 'video');
     expect(stream.quality, '720p · video+audio');
-    expect(stream.url.path, '/720-video.mp4');
+    expect(stream.url.path, contains('/720-avc1'));
     expect(stream.audioUrl?.path, contains('audio-it.4-140.m4a'));
     expect(stream.audioLanguage, 'it');
   });
@@ -357,7 +361,6 @@ void main() {
   test('l’audio originale vince sul doppiaggio anche se è il default', () {
     final stream = StreamResolver.selectStream(
       StreamManifest([
-        _muxed(360),
         _videoOnly(1080),
         _audio('en-US.10', 'English original', isDefault: true),
         _audio('it.4', 'Italian', isDefault: false),
@@ -365,7 +368,19 @@ void main() {
     );
     expect(stream.kind, 'video');
     expect(stream.audioLanguage, 'en-US');
-    expect(stream.url.path, '/1080-video.mp4');
+    expect(stream.url.path, contains('/1080-avc1'));
+  });
+
+  test('a parità di risoluzione preferisce H.264 ad AV1', () {
+    final stream = StreamResolver.selectStream(
+      StreamManifest([
+        _videoOnly(1080, codec: 'av01.0.08M.08', bitrate: 3000000),
+        _videoOnly(1080, codec: 'avc1.640028', bitrate: 2000000),
+        _audio('it.4', 'Italian original', isDefault: true),
+      ]),
+    );
+    expect(stream.kind, 'video');
+    expect(stream.url.path, contains('avc1'));
   });
 
   test('un solo audio mantiene lo stream muxed', () {

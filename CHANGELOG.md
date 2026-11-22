@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.7
+
+### Fixed
+
+- Playback: muxed and HLS streams remain the first choice. A separate
+  video-only/audio-only rendition is used only when no muxed/HLS stream exists,
+  avoiding HTTP 403 failures from split Android-client URLs.
+- Playback: when a split stream is required, H.264 is preferred over VP9 and
+  AV1, fixing videos that failed to open with the highest-bitrate codec.
+
 ## 2.5.6
 
 ### Fixed

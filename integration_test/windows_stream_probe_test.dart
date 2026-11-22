@@ -93,7 +93,8 @@ void main() {
             debugPrint(
               'STREAM_PROBE resolved kind=${stream.kind} '
               'quality=${stream.quality} audioLanguage=${stream.audioLanguage} '
-              'audio=${stream.audioUrl != null}',
+              'videoItag=${stream.url.queryParameters['itag']} '
+              'audioItag=${stream.audioUrl?.queryParameters['itag']}',
             );
             return stream;
           },
@@ -107,7 +108,9 @@ void main() {
     final player = controller.player as ResumablePlayer;
     final logSubscription = player.stream.log.listen((log) {
       if (log.level == 'error' || log.level == 'fatal') {
-        errors.add('${log.prefix}: ${log.text}');
+        final message = '${log.prefix}: ${log.text}';
+        errors.add(message);
+        debugPrint('STREAM_PROBE error $message');
       }
     });
     void recoveryListener() {
