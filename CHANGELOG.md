@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.5.6
+
+### Fixed
+
+- Playback: non-fatal mpv network and decoder errors no longer replace the
+  video with an error screen while audio keeps playing. Transient events are
+  ignored, decoder failures trigger a bounded reopen, and the player is paused
+  only when playback really cannot continue.
+- Playback: a stream watchdog now renews expired or stalled URLs at the current
+  position, with backoff, a lower-quality fallback and a final muxed-stream
+  attempt. Long pauses, device sleep, backgrounding and network changes recover
+  without closing the player.
+- Playback: stream resolution after a long pause is retried and reports progress
+  in the player instead of failing on the first transient error.
+- Playback: position updates that land ahead of a seek target are accepted, and
+  a keyframe behind the target is accepted after a short settling time.
+- Caching: mpv now prebuffers a few seconds before starting and keeps 45/90
+  seconds of read-ahead, with separate forward/backward cache budgets and
+  best-effort HTTP reconnects. The on-disk cache is disabled because the
+  bundled libmpv can log `Failed to create file cache` on every open.
+- Playback: the startup watchdog no longer reopens a stream only because a
+  non-fatal error was logged while the position is still advancing. This
+  removes a false recovery loop observed during live playback.
+- Watch state: an early end caused by a stream error no longer marks the video
+  as watched.
+- Audio: YouTube player requests now use the application language, so the
+  original audio track wins over the English auto-dub. Videos that only expose
+  separate video/audio tracks now play the video and the original audio
+  together instead of falling back to audio-only.
+
 ## 2.5.5
 
 ### Fixed

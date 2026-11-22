@@ -48,7 +48,8 @@ Key modules:
 | `lib/src/services/video_download_service.dart` | Muxed-stream download to the local app data folder |
 | `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
 | `lib/src/services/local_video_service.dart` | MP4 title/duration metadata and file-name fallback |
-| `lib/src/services/stream_resolver.dart` | Direct media stream resolution |
+| `lib/src/services/stream_resolver.dart` | Direct media stream resolution, including the muxed fallback |
+| `lib/src/services/stream_playback_policy.dart` | mpv cache, prebuffer and reconnect policy |
 | `lib/src/services/sponsorblock_service.dart` | SponsorBlock segment lookup |
 | `lib/src/services/dlna/ssdp_discovery.dart` | SSDP MediaRenderer discovery and device-description fetch |
 | `lib/src/services/dlna/dlna_models.dart` | SSDP/description parsing and device model |
@@ -121,24 +122,67 @@ timeout. Closing `PlayerPage` cancels pending local stream resolution. HLS with
 audio and video is preferred; Android selects the highest available resolution
 up to 720p (or the smallest HLS rendition if all exceed that limit). Desktop has
 no resolution cap. A quality label comes from the selected stream's manifest;
-a 720p cap does not upscale a 360p fallback. Separate video/audio tracks are not
-currently combined.
+a 720p cap does not upscale a 360p fallback.
+
+The `youtube_explode_dart` player requests are localized with the application
+language (`hl`/`gl`) instead of the library's hard-coded English context. This
+makes YouTube mark the original audio track as default rather than the English
+auto-dub. When a video exposes several audio languages and separate video-only
+tracks, Expeditus prefers a video-only rendition plus the original audio track
+(selected by `displayName`/`audioIsDefault`/language) and attaches the audio
+with media_kit's `AudioTrack.uri` / mpv `audio-add`. This is also the fallback
+for videos where YouTube offers no muxed or HLS stream at all; without it the
+resolver would have selected an audio-only stream. The external audio URL is
+refreshed together with the video URL on resume/recovery.
 
 `ResumablePlayer` keeps a stable position independently of native clock resets.
 The standard video controls and fullscreen controls use the same play/pause/seek
 overrides. Before resuming a remote stream paused for at least two minutes, or
-whose `expire` time is within 30 seconds, it resolves a fresh URL and opens it
-with `Media.start` at the pause point. Brief pauses reuse the URL and restore the
-decoder's position if needed. Local files and the muted DLNA clock do not renew
-URLs. A manual pause remains paused when the app returns to the foreground.
-Pending resumes are invalidated by pause, seek, stop or disposal, and a load
-that finishes in the background stays paused.
+whose `expire` time is within two minutes, it resolves a fresh URL and opens it
+with `Media.start` at the pause point. Resolution failures are retried with
+backoff. Brief pauses reuse the URL and restore the decoder's position if
+needed. Local files and the muted DLNA clock do not renew URLs. A manual pause
+remains paused when the app returns to the foreground. Pending resumes are
+invalidated by pause, seek, stop or disposal, and a load that finishes in the
+background stays paused.
 
-One video controller is created per player, including across retries. The
-Android demuxer cache budget is 16 MiB forward and 16 MiB backward, compared with
-32 MiB each on desktop. These limits are not a limit on total process memory:
-decoder buffers, textures, Dart objects and native allocations use additional
-memory. All page subscriptions and the player are released on close. The
+The player also supervises the stream while it is playing. A one-second health
+check detects a position that has not advanced for 20 seconds; the threshold
+drops to 10 seconds after a recent mpv network error. A long clock gap is
+treated as device suspension and only resets the watchdog. Recovery pauses the
+local player, resolves a fresh URL and reopens it at the current position, with
+up to three attempts and backoff. The second attempt lowers the Android quality
+cap to 480p (720p on desktop), and the third prefers a muxed MP4 and 360p
+(480p on desktop). Pause, seek, stop, backgrounding and disposal cancel a
+recovery. Three unsuccessful recovery cycles without playback progress show a
+recoverable error instead of retrying forever.
+
+mpv error logs are not shown as fatal by themselves. Network errors are ignored
+while the position advances; they only make the watchdog more responsive.
+Video/audio decoder errors trigger a bounded stream reopen even when the other
+track keeps advancing, which avoids a frozen picture with continuous audio. The
+error stage appears when opening fails or after recovery is exhausted, and the
+player is paused before it is shown so audio never continues behind the error.
+
+`StreamPlaybackPolicy` tunes the native player before the first media opens:
+`cache-pause-initial=yes`, `cache-pause-wait=4`, `cache-secs=45` on Android and
+90 on desktop, a 24 MiB forward / 8 MiB backward cache on Android (64/16 MiB on
+desktop), `network-timeout=10`, and best-effort FFmpeg reconnect options. mpv
+therefore waits for a few seconds of media before the first frame and keeps
+enough read-ahead to absorb short network interruptions. The trade-off is a
+slightly longer startup and more data prefetched in advance.
+
+`cache-on-disk` is explicitly disabled. The bundled libmpv can fail to create
+the temporary cache file and log `lavf: Failed to create file cache.` on every
+open even while playback is healthy. The forward cache is large enough in
+memory, and the error is ignored by the health monitor. A live Windows probe
+(`integration_test/windows_stream_probe_test.dart`) reads these properties back
+from libmpv and measures 45 seconds of real playback.
+
+One video controller is created per player, including across retries. These
+cache limits are not a limit on total process memory: decoder buffers, textures,
+Dart objects and native allocations use additional memory. All page
+subscriptions and the player are released on close. The
 [Motorola device regression](ANDROID_PLAYBACK_TEST.md) records startup, pause,
 real Activity transitions and repeated resource-release measurements. Short
 regression runs cannot exclude native leaks during longer sessions.
@@ -400,6 +444,10 @@ flutter test integration_test -d windows
 # Live network E2E: @antirez feed, channel search, video link + auto-subscribe
 flutter test integration_test_live/live_youtube_test.dart -d windows --dart-define=RUN_LIVE_TESTS=true
 
+# Live Windows playback probe: cache properties, 45 seconds of playback,
+# position/buffer/recovery/error sampling. Not run by CI.
+flutter test integration_test/windows_stream_probe_test.dart -d windows
+
 # Live DLNA testing against a real TV is manual only: it is not part of the
 # repository test suite and is never run by CI.
 ```
@@ -413,7 +461,7 @@ video restarting.
 ## Limits and risks
 
 - RSS exposes at most 15 uploads per channel. Deeper history needs the YouTube Data API, yt-dlp, or another extractor.
-- The fallback muxed stream is usually 360p; HLS is preferred when available, up to 720p on Android. Available quality depends on the extracted manifest; separate DASH audio/video tracks are not combined.
+- The fallback muxed stream is usually 360p; HLS is preferred when available, up to 720p on Android. Available quality depends on the extracted manifest. When no muxed/HLS stream exists, a video-only rendition is combined with the preferred original audio track through mpv. Downloads still use muxed streams only.
 - Tags are not available for every video and cost one watch-page request per uncached video.
 - Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
 - Local MP4 files must remain at the path where they were added; the library stores the path, not a copy.

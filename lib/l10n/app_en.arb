@@ -507,6 +507,19 @@
   "playbackFailed": "Could not play this video. Try again or open it on YouTube.",
   "playerErrorFileTitle": "File unavailable",
   "playerErrorStreamTitle": "Stream unavailable",
+  "streamReconnecting": "Unstable connection. Restoring the stream… ({attempt}/{total})",
+  "@streamReconnecting": {
+    "placeholders": {
+      "attempt": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "networkUnstable": "The network connection is missing or unstable. Check your connection and try again.",
+  "streamStalled": "The stream stopped. Try to resume playback.",
   "technicalDetails": "Technical details",
   "sponsorBlockSegments": "SponsorBlock · {count} segments",
   "@sponsorBlockSegments": {

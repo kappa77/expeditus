@@ -806,6 +806,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playerErrorStreamTitle => 'Stream unavailable';
 
   @override
+  String streamReconnecting(int attempt, int total) {
+    return 'Unstable connection. Restoring the stream… ($attempt/$total)';
+  }
+
+  @override
+  String get networkUnstable =>
+      'The network connection is missing or unstable. Check your connection and try again.';
+
+  @override
+  String get streamStalled => 'The stream stopped. Try to resume playback.';
+
+  @override
   String get technicalDetails => 'Technical details';
 
   @override

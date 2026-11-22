@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
 import '../services/resumable_player.dart';
+import '../services/stream_playback_policy.dart';
 import '../services/stream_resolver.dart';
 import '../state/app_state.dart';
 import '../state/cast_controller.dart';
@@ -45,7 +46,7 @@ class PlayerPage extends StatefulWidget {
 class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late final ResumablePlayer _player;
   late final VideoController _controller;
-  final StreamResolver _streamResolver = StreamResolver();
+  late final StreamResolver _streamResolver;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   List<SponsorSegment> _segments = const [];
   Duration? _duration;
@@ -73,6 +74,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Uri? _mediaUri;
   String? _streamKind;
   String? _localPath;
+  Uri? _externalAudioUri;
+  String? _externalAudioLanguage;
   bool _castMuted = false;
   double _volumeBeforeCast = 100;
   String? _lastCastError;
@@ -86,6 +89,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   bool _inBackground = false;
   bool _opening = false;
   bool _retrying = false;
+  Future<void>? _errorPause;
 
   @override
   void initState() {
@@ -93,11 +97,14 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     MediaKit.ensureInitialized();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handleGlobalKey);
+    _streamResolver = StreamResolver(languageCode: _preferredAudioLanguage());
     _player = ResumablePlayer(
       configuration: PlayerConfiguration(
-        // media_kit applies this limit to both forward and backward caches.
-        bufferSize: (isAndroid ? 16 : 32) * 1024 * 1024,
+        // StreamPlaybackPolicy refines these limits for forward and backward
+        // caches separately before the first media is opened.
+        bufferSize: (isAndroid ? 24 : 64) * 1024 * 1024,
       ),
+      playbackPolicy: StreamPlaybackPolicy(android: isAndroid),
       refreshMedia: _refreshMedia,
       onRefreshError: _showPlaybackError,
       canPlay: () =>
@@ -134,7 +141,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     );
     _subscriptions.add(
       _player.stream.completed.listen((completed) {
-        if (completed && !_player.isOpening) _markWatched();
+        if (!completed || _player.isOpening) return;
+        // A stream error can end the media early. Only a completion close to
+        // the known duration should mark the video as watched.
+        final total = _duration;
+        if (total != null &&
+            total > const Duration(seconds: 1) &&
+            _playbackPosition < total - const Duration(seconds: 3)) {
+          return;
+        }
+        _markWatched();
       }),
     );
     // Persist the exact position as soon as playback stops, so pausing and
@@ -149,11 +165,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _uiPosition.value = Duration.zero;
     _uiDuration.value = null;
     _lastProgressSave = DateTime.now();
-    _subscriptions.add(
-      _player.stream.error.listen((message) {
-        if (mounted) setState(() => _error = message);
-      }),
-    );
+    _player.recovery.addListener(_onRecoveryChanged);
     _subscriptions.add(
       _player.stream.playing.listen((playing) {
         final startedAt = _castStartedAt;
@@ -178,6 +190,12 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       if (mounted) unawaited(_open());
     });
     unawaited(_loadChapters());
+  }
+
+  String _preferredAudioLanguage() {
+    final code = widget.state.localeCode;
+    if (code != 'system' && code.isNotEmpty) return code;
+    return WidgetsBinding.instance.platformDispatcher.locale.languageCode;
   }
 
   double _initialPlaybackRate() {
@@ -282,6 +300,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             ? l10n.audioOnlyQuality
             : stream.quality;
         kind = stream.kind;
+        _externalAudioUri = stream.audioUrl;
+        _externalAudioLanguage = stream.audioLanguage;
       }
 
       if (!mounted) return;
@@ -289,6 +309,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       _mediaUri = mediaUri;
       _streamKind = kind;
       _localPath = localPathUsed;
+      _error = null;
+      _errorDetails = null;
       // Apply the resume point while the media loads instead of seeking after
       // playback starts. This avoids the initial jump and the extra delay.
       final startAt = _resumeStart(resumeAt);
@@ -297,7 +319,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           : -1;
       _uiPosition.value = startAt ?? Duration.zero;
       await _player.open(
-        Media(mediaUri.toString(), start: startAt),
+        Media(mediaUri.toString(), start: startAt, extras: _mediaExtras()),
         play: true,
       );
       if (!mounted) return;
@@ -335,9 +357,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<Media> _refreshMedia(Duration position) async {
-    final resolve = widget.resolver ?? _streamResolver.resolveVideo;
-    final stream = await resolve(widget.video.id);
+  Future<Media> _refreshMedia(Duration position, int attempt) async {
+    final ResolvedStream stream;
+    final resolve = widget.resolver;
+    if (resolve != null) {
+      stream = await resolve(widget.video.id);
+    } else {
+      final maxHeight = switch (attempt) {
+        >= 3 => isAndroid ? 360 : 480,
+        2 => isAndroid ? 480 : 720,
+        _ => null,
+      };
+      stream = await _streamResolver.resolveVideo(
+        widget.video.id,
+        maxHeight: maxHeight,
+        preferMuxed: attempt >= 3,
+      );
+    }
     if (!mounted) throw StateError('Player closed');
     setState(() {
       _mediaUri = stream.url;
@@ -345,18 +381,48 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       _quality = stream.kind == 'audio'
           ? context.l10n.audioOnlyQuality
           : stream.quality;
+      _externalAudioUri = stream.audioUrl;
+      _externalAudioLanguage = stream.audioLanguage;
       _error = null;
       _errorDetails = null;
     });
-    return Media(stream.url.toString(), start: position);
+    return Media(
+      stream.url.toString(),
+      start: position,
+      extras: _mediaExtras(),
+    );
+  }
+
+  Map<String, dynamic>? _mediaExtras() {
+    final audio = _externalAudioUri;
+    if (audio == null) return null;
+    return {
+      externalAudioUrlExtra: audio.toString(),
+      externalAudioLanguageExtra: _externalAudioLanguage,
+    };
   }
 
   void _showPlaybackError(Object error) {
     if (!mounted) return;
+    // Never leave audio playing behind the error stage. Recoverable stream
+    // errors are handled by ResumablePlayer and never reach this method.
+    _errorPause = _pauseAfterError();
     setState(() {
       _error = _friendlyError(error, context.l10n);
       _errorDetails = error.toString().replaceFirst('Exception: ', '');
     });
+  }
+
+  Future<void> _pauseAfterError() async {
+    try {
+      await _player.pause();
+    } on Object {
+      // The player may already be closing.
+    }
+  }
+
+  void _onRecoveryChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadSponsorSegments() async {
@@ -441,7 +507,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (_inBackground) return;
     _inBackground = true;
     _wasPlayingBeforeBackground =
-        _player.state.playing || (!_ready && _opening);
+        _player.isPlaybackIntended || (!_ready && _opening);
     unawaited(_persistProgress());
     // While casting, the local player is a muted clock and the TV owns
     // playback: leave it alone.
@@ -466,6 +532,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Future<void> _leaveBackground() async {
     if (!_inBackground) return;
     _inBackground = false;
+    _player.notifyAppResumed();
     final wasPlaying = _wasPlayingBeforeBackground;
     final pausedByUs = _pausedForBackground;
     final pause = _backgroundPause;
@@ -475,7 +542,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
     // A very fast background/foreground transition may still be pausing.
     if (pause != null) await pause;
-    if (!mounted || !_ready || _inBackground) return;
+    if (!mounted || !_ready || _inBackground || _error != null) return;
     final cast = widget.state.castController;
     if (cast.isCasting && _castMuted) return;
     // ResumablePlayer restores the pause point and renews stale URLs before
@@ -610,8 +677,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
     final ok = await cast.castVideo(
       video: widget.video,
-      fallbackUri: mediaUri,
-      fallbackKind: _streamKind,
+      // A video-only fallback would play without audio on the renderer. Let
+      // the cast resolver choose a muxed/HLS stream instead.
+      fallbackUri: _streamKind == 'video' ? null : mediaUri,
+      fallbackKind: _streamKind == 'video' ? null : _streamKind,
       localPath: _localPath,
       startAt: startAt,
     );
@@ -738,6 +807,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (_opening || _retrying || !mounted) return;
     _retrying = true;
     try {
+      final errorPause = _errorPause;
+      _errorPause = null;
+      if (errorPause != null) await errorPause;
+      if (!mounted) return;
       final resumeAt = _playbackPosition;
       final cast = widget.state.castController;
       if (cast.isCasting && cast.currentVideo?.id == widget.video.id) {
@@ -752,6 +825,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         _mediaUri = null;
         _streamKind = null;
         _localPath = null;
+        _externalAudioUri = null;
+        _externalAudioLanguage = null;
       });
       await _player.stop();
       if (!mounted) return;
@@ -808,6 +883,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       unawaited(cast.stopPlayback(expectedVideoId: widget.video.id));
     }
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
+    _player.recovery.removeListener(_onRecoveryChanged);
     _seekAccumulator.dispose();
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
@@ -872,6 +948,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         onOpenExternal: _openExternal,
       );
     }
+    final recoveryStatus = _player.recovery.value;
     if (!_ready) {
       return Center(
         child: Column(
@@ -880,9 +957,15 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             const CircularProgressIndicator(strokeWidth: 2),
             const SizedBox(height: 14),
             Text(
-              widget.video.isLocal
+              recoveryStatus.isReconnecting
+                  ? context.l10n.streamReconnecting(
+                      recoveryStatus.attempt,
+                      recoveryStatus.maxAttempts,
+                    )
+                  : widget.video.isLocal
                   ? context.l10n.openingFile
                   : context.l10n.resolvingStream,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 color: ExpeditusColors.muted,
                 fontSize: 12,
@@ -949,6 +1032,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
               onAllowFirewall: _allowFirewallAndRetry,
               onUseLocal: _useLocalOnly,
             ),
+          ),
+        if (recoveryStatus.isReconnecting)
+          _StreamRecoveryBanner(
+            attempt: recoveryStatus.attempt,
+            maxAttempts: recoveryStatus.maxAttempts,
           ),
       ],
     );
@@ -1326,7 +1414,80 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         lower.contains('no playable stream')) {
       return l10n.noDownloadableFormat;
     }
+    if (lower.contains('stall') ||
+        lower.contains('non è ripartita') ||
+        lower.contains('not resumed')) {
+      return l10n.streamStalled;
+    }
+    if (lower.contains('network') ||
+        lower.contains('connection') ||
+        lower.contains('offline') ||
+        lower.contains('timeout') ||
+        lower.contains('timed out') ||
+        lower.contains('socket') ||
+        lower.contains('dns') ||
+        lower.contains('http')) {
+      return l10n.networkUnstable;
+    }
     return l10n.playbackFailed;
+  }
+}
+
+class _StreamRecoveryBanner extends StatelessWidget {
+  const _StreamRecoveryBanner({
+    required this.attempt,
+    required this.maxAttempts,
+  });
+
+  final int attempt;
+  final int maxAttempts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 16,
+      left: 16,
+      right: 16,
+      child: IgnorePointer(
+        child: SafeArea(
+          bottom: false,
+          child: Center(
+            child: Material(
+              color: ExpeditusColors.surface.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        context.l10n.streamReconnecting(attempt, maxAttempts),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: ExpeditusColors.text,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

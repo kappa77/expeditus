@@ -808,6 +808,19 @@ class AppLocalizationsIt extends AppLocalizations {
   String get playerErrorStreamTitle => 'Stream non disponibile';
 
   @override
+  String streamReconnecting(int attempt, int total) {
+    return 'Connessione instabile. Ripristino dello stream… ($attempt/$total)';
+  }
+
+  @override
+  String get networkUnstable =>
+      'Connessione di rete assente o instabile. Controlla la connessione e riprova.';
+
+  @override
+  String get streamStalled =>
+      'Lo stream si è interrotto. Riprova a riprendere la riproduzione.';
+
+  @override
   String get technicalDetails => 'Dettagli tecnici';
 
   @override

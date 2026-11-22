@@ -1,20 +1,58 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
+/// Extras keys used by the player to attach a separate audio stream to a
+/// video-only rendition.
+const externalAudioUrlExtra = 'expeditus.externalAudioUrl';
+const externalAudioLanguageExtra = 'expeditus.externalAudioLanguage';
 
 class ResolvedStream {
   const ResolvedStream({
     required this.url,
     required this.quality,
     required this.kind,
+    this.audioUrl,
+    this.audioLanguage,
   });
 
   final Uri url;
   final String quality;
   final String kind;
 
+  /// Separate audio URL for a video-only rendition. YouTube sometimes offers
+  /// no muxed/HLS stream for a video, but still exposes video-only and
+  /// audio-only tracks separately.
+  final Uri? audioUrl;
+  final String? audioLanguage;
+
   String get mimeType => mimeTypeForStreamKind(kind);
+}
+
+YoutubeApiClient localizeYoutubeClient(
+  YoutubeApiClient client,
+  String? languageCode,
+) {
+  final code = languageCode?.trim().toLowerCase();
+  if (code == null || code.isEmpty || code == 'en') return client;
+  final payload =
+      jsonDecode(jsonEncode(client.payload)) as Map<String, dynamic>;
+  final context = payload['context'] as Map<String, dynamic>;
+  final node = context['client'] as Map<String, dynamic>;
+  node['hl'] = code;
+  node['gl'] = switch (code) {
+    'it' => 'IT',
+    'de' => 'DE',
+    'es' => 'ES',
+    'fr' => 'FR',
+    'pt' => 'PT',
+    'ja' => 'JP',
+    'ko' => 'KR',
+    _ => 'US',
+  };
+  return YoutubeApiClient(payload, client.apiUrl, headers: client.headers);
 }
 
 String mimeTypeForStreamKind(String kind) {
@@ -62,6 +100,7 @@ class StreamResolver {
   StreamResolver({
     StreamManifestRequest Function()? requestFactory,
     bool? android,
+    this.languageCode,
     this.requestTimeout = const Duration(seconds: 12),
     this.hlsPreferenceWindow = const Duration(milliseconds: 750),
   }) : _requestFactory = requestFactory ?? _YoutubeManifestRequest.new,
@@ -69,6 +108,11 @@ class StreamResolver {
 
   final StreamManifestRequest Function() _requestFactory;
   final bool _android;
+
+  /// Preferred YouTube language/region. It makes YouTube mark the original
+  /// audio track as default instead of the English auto-dub.
+  final String? languageCode;
+
   final Duration requestTimeout;
   final Duration hlsPreferenceWindow;
   final Map<StreamManifestRequest, Completer<StreamManifest>> _active = {};
@@ -83,10 +127,14 @@ class StreamResolver {
     }
   }
 
-  Future<ResolvedStream> resolveVideo(String videoId, {int? maxHeight}) async {
+  Future<ResolvedStream> resolveVideo(
+    String videoId, {
+    int? maxHeight,
+    bool preferMuxed = false,
+  }) async {
     maxHeight ??= _android ? 720 : null;
     if (_closed) throw StateError('Stream resolver closed');
-    if (_android) {
+    if (_android && !preferMuxed) {
       final fast = await _resolveAndroidFast(videoId, maxHeight: maxHeight);
       if (fast != null) return fast;
     }
@@ -106,6 +154,7 @@ class StreamResolver {
           client,
           requireWatchPage: requireWatchPage,
           maxHeight: maxHeight,
+          preferMuxed: preferMuxed,
         );
       } catch (error) {
         if (_closed) rethrow;
@@ -177,16 +226,18 @@ class StreamResolver {
     YoutubeApiClient client, {
     required bool requireWatchPage,
     int? maxHeight,
+    bool preferMuxed = false,
     Set<StreamManifestRequest>? pending,
   }) async {
     if (_closed) throw StateError('Stream resolver closed');
     final request = _requestFactory();
+    final localizedClient = localizeYoutubeClient(client, languageCode);
     final result = Completer<StreamManifest>();
     _active[request] = result;
     pending?.add(request);
     try {
       request
-          .load(videoId, client, requireWatchPage: requireWatchPage)
+          .load(videoId, localizedClient, requireWatchPage: requireWatchPage)
           .then(
             (manifest) {
               if (!result.isCompleted) result.complete(manifest);
@@ -196,7 +247,12 @@ class StreamResolver {
             },
           );
       final manifest = await result.future.timeout(requestTimeout);
-      return selectStream(manifest, maxHeight: maxHeight);
+      return selectStream(
+        manifest,
+        maxHeight: maxHeight,
+        preferMuxed: preferMuxed,
+        preferredLanguage: languageCode,
+      );
     } finally {
       pending?.remove(request);
       if (_active.remove(request) != null) request.close();
@@ -218,7 +274,26 @@ class StreamResolver {
   static ResolvedStream selectStream(
     StreamManifest manifest, {
     int? maxHeight,
+    bool preferMuxed = false,
+    String? preferredLanguage,
   }) {
+    final split = _selectSplitStream(
+      manifest,
+      maxHeight: maxHeight,
+      preferredLanguage: preferredLanguage,
+      requireMultipleAudio: true,
+    );
+    if (split != null) return split;
+
+    if (preferMuxed && manifest.muxed.isNotEmpty) {
+      final stream = manifest.muxed.withHighestBitrate();
+      return ResolvedStream(
+        url: stream.url,
+        quality: '${stream.qualityLabel} · muxed',
+        kind: 'muxed',
+      );
+    }
+
     final hlsMuxed = manifest.hls.whereType<HlsMuxedStreamInfo>().toList();
     if (hlsMuxed.isNotEmpty) {
       final eligible = maxHeight == null
@@ -257,12 +332,104 @@ class StreamResolver {
       );
     }
 
+    final fallback = _selectSplitStream(
+      manifest,
+      maxHeight: maxHeight,
+      preferredLanguage: preferredLanguage,
+      requireMultipleAudio: false,
+    );
+    if (fallback != null) return fallback;
+
     if (manifest.audioOnly.isNotEmpty) {
-      final stream = manifest.audioOnly.withHighestBitrate();
+      final stream = _selectAudio(
+        manifest.audioOnly,
+        preferredLanguage: preferredLanguage,
+      );
       return ResolvedStream(url: stream.url, quality: 'audio', kind: 'audio');
     }
 
     throw Exception('No playable stream for this video.');
+  }
+
+  static ResolvedStream? _selectSplitStream(
+    StreamManifest manifest, {
+    required int? maxHeight,
+    required String? preferredLanguage,
+    required bool requireMultipleAudio,
+  }) {
+    if (manifest.videoOnly.isEmpty || manifest.audioOnly.isEmpty) return null;
+    final languageIds = manifest.audioOnly
+        .map((stream) => stream.audioTrack?.id)
+        .whereType<String>()
+        .toSet();
+    if (requireMultipleAudio && languageIds.length < 2) return null;
+
+    final video = _selectVideo(manifest.videoOnly, maxHeight: maxHeight);
+    final audio = _selectAudio(
+      manifest.audioOnly,
+      preferredLanguage: preferredLanguage,
+    );
+    final language = audio.audioTrack?.id.split('.').first;
+    return ResolvedStream(
+      url: video.url,
+      quality: '${video.qualityLabel} · video+audio',
+      kind: 'video',
+      audioUrl: audio.url,
+      audioLanguage: language,
+    );
+  }
+
+  static VideoOnlyStreamInfo _selectVideo(
+    List<VideoOnlyStreamInfo> streams, {
+    required int? maxHeight,
+  }) {
+    final eligible = maxHeight == null
+        ? streams.toList()
+        : streams
+              .where((stream) => stream.videoResolution.height <= maxHeight)
+              .toList();
+    final fits = eligible.isNotEmpty;
+    final candidates = fits ? eligible : streams.toList();
+    candidates.sort((a, b) {
+      final resolution = b.videoResolution.height.compareTo(
+        a.videoResolution.height,
+      );
+      if (resolution != 0) return fits ? resolution : -resolution;
+      return b.bitrate.compareTo(a.bitrate);
+    });
+    return candidates.first;
+  }
+
+  static AudioOnlyStreamInfo _selectAudio(
+    List<AudioOnlyStreamInfo> streams, {
+    required String? preferredLanguage,
+  }) {
+    final preferred = preferredLanguage?.toLowerCase();
+    int score(AudioOnlyStreamInfo stream) {
+      final track = stream.audioTrack;
+      final name = (track?.displayName ?? '').toLowerCase();
+      final id = (track?.id ?? '').toLowerCase();
+      var value = 0;
+      if (name.contains('original')) value += 100;
+      if (track?.audioIsDefault == true) value += 50;
+      if (preferred != null &&
+          preferred.isNotEmpty &&
+          (id == preferred ||
+              id.startsWith('$preferred.') ||
+              id.startsWith('$preferred-'))) {
+        value += 40;
+      }
+      if (stream.audioCodec.startsWith('mp4a')) value += 10;
+      return value;
+    }
+
+    final sorted = streams.toList()
+      ..sort((a, b) {
+        final byScore = score(b).compareTo(score(a));
+        if (byScore != 0) return byScore;
+        return b.bitrate.compareTo(a.bitrate);
+      });
+    return sorted.first;
   }
 
   /// Resolves a stream for a DLNA renderer.

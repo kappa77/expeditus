@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:expeditus/src/services/resumable_player.dart';
+import 'package:expeditus/src/services/stream_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -12,12 +13,17 @@ class _Decoder extends PlatformPlayer {
   int plays = 0;
   int pauses = 0;
   bool disposed = false;
+  AudioTrack? selectedAudio;
   Completer<void>? opening;
   bool get hasPositionListener => positionController.hasListener;
 
   void report(Duration position) {
     state = state.copyWith(position: position);
     positionController.add(position);
+  }
+
+  void reportError(String prefix, String text) {
+    logController.add(PlayerLog(prefix: prefix, level: 'error', text: text));
   }
 
   @override
@@ -50,6 +56,16 @@ class _Decoder extends PlatformPlayer {
   }
 
   @override
+  Future<void> setRate(double rate) async {
+    state = state.copyWith(rate: rate);
+  }
+
+  @override
+  Future<void> setAudioTrack(AudioTrack track) async {
+    selectedAudio = track;
+  }
+
+  @override
   Future<void> stop() async {
     state = state.copyWith(playing: false);
     report(Duration.zero);
@@ -63,6 +79,12 @@ class _Decoder extends PlatformPlayer {
 }
 
 Future<void> _flush() => Future<void>.delayed(Duration.zero);
+
+Future<void> _settle() async {
+  for (var i = 0; i < 20; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
 
 void main() {
   late _Decoder decoder;
@@ -88,7 +110,9 @@ void main() {
       canPlay: () => foreground,
       canRefresh: () => refreshAllowed,
       onRefreshError: errors.add,
-      refreshMedia: (position) async {
+      stallAfter: null,
+      recoveryDelays: const [Duration.zero],
+      refreshMedia: (position, attempt) async {
         refreshed.add(position);
         return refreshResult?.future ??
             Media('https://example.com/renewed.m3u8', start: position);
@@ -316,8 +340,290 @@ void main() {
       expect(decoder.state.playing, isFalse);
       refreshResult = null;
       await player.play();
-      expect(refreshed, hasLength(2));
+      // Three failed attempts plus the successful retry.
+      expect(refreshed, hasLength(4));
       expect(decoder.state.playing, isTrue);
     },
   );
+
+  test(
+    'accetta il progresso oltre dieci secondi dal punto di ripresa',
+    () async {
+      await player.open(
+        Media('https://example.com/video', start: const Duration(seconds: 137)),
+      );
+      decoder.report(const Duration(seconds: 160));
+      await _flush();
+      expect(player.position, const Duration(seconds: 160));
+    },
+  );
+
+  test(
+    'un keyframe indietro viene accettato dopo il tempo di assestamento',
+    () async {
+      await player.open(
+        Media('https://example.com/video', start: const Duration(seconds: 300)),
+      );
+      decoder.report(const Duration(seconds: 100));
+      await _flush();
+      expect(player.position, const Duration(seconds: 300));
+
+      now = now.add(const Duration(seconds: 11));
+      decoder.report(const Duration(seconds: 101));
+      await _flush();
+      expect(player.position, const Duration(seconds: 101));
+    },
+  );
+
+  test('lo stallo della posizione rinnova lo stream e riprende', () async {
+    final watchdogDecoder = _Decoder();
+    final watchdog = ResumablePlayer(
+      platformPlayer: watchdogDecoder,
+      clock: () => now,
+      canPlay: () => true,
+      canRefresh: () => true,
+      onRefreshError: errors.add,
+      stallAfter: const Duration(seconds: 5),
+      startupGrace: Duration.zero,
+      recoveryDelays: const [Duration.zero],
+      refreshMedia: (position, attempt) async {
+        refreshed.add(position);
+        return Media('https://example.com/renewed.m3u8', start: position);
+      },
+    );
+    addTearDown(watchdog.dispose);
+    await watchdog.open(Media('https://example.com/video.m3u8'));
+    watchdogDecoder.report(const Duration(seconds: 10));
+    await _flush();
+    watchdog.debugCheckHealth(); // consume the zero-length startup grace
+
+    now = now.add(const Duration(seconds: 6));
+    watchdog.debugCheckHealth();
+    await _settle();
+
+    expect(refreshed, [const Duration(seconds: 10)]);
+    expect(watchdogDecoder.opened, hasLength(2));
+    expect(watchdogDecoder.state.playing, isTrue);
+    expect(watchdog.position, const Duration(seconds: 10));
+    expect(errors, isEmpty);
+  });
+
+  test(
+    'un errore di rete transitorio non interrompe la riproduzione',
+    () async {
+      final watchdogDecoder = _Decoder();
+      final watchdog = ResumablePlayer(
+        platformPlayer: watchdogDecoder,
+        clock: () => now,
+        canPlay: () => true,
+        canRefresh: () => true,
+        onRefreshError: errors.add,
+        stallAfter: const Duration(seconds: 5),
+        startupGrace: Duration.zero,
+        recoveryDelays: const [Duration.zero],
+        refreshMedia: (position, attempt) async {
+          refreshed.add(position);
+          return Media('https://example.com/renewed.m3u8', start: position);
+        },
+      );
+      addTearDown(watchdog.dispose);
+      await watchdog.open(Media('https://example.com/video.m3u8'));
+      watchdogDecoder.report(const Duration(seconds: 10));
+      await _flush();
+      watchdog.debugCheckHealth();
+
+      watchdogDecoder.reportError('ffmpeg', 'error: tcp: connection reset');
+      await _flush();
+      now = now.add(const Duration(seconds: 1));
+      watchdogDecoder.report(const Duration(seconds: 11));
+      await _flush();
+
+      now = now.add(const Duration(seconds: 6));
+      watchdog.debugCheckHealth();
+      await _settle();
+
+      expect(refreshed, isEmpty);
+      expect(errors, isEmpty);
+      expect(watchdogDecoder.opened, hasLength(1));
+      expect(watchdogDecoder.state.playing, isTrue);
+    },
+  );
+
+  test(
+    'un errore del decoder video rinnova anche con audio che avanza',
+    () async {
+      final watchdogDecoder = _Decoder();
+      final watchdog = ResumablePlayer(
+        platformPlayer: watchdogDecoder,
+        clock: () => now,
+        canPlay: () => true,
+        canRefresh: () => true,
+        onRefreshError: errors.add,
+        stallAfter: null,
+        decoderRecoveryDelay: Duration.zero,
+        recoveryDelays: const [Duration.zero],
+        refreshMedia: (position, attempt) async {
+          refreshed.add(position);
+          return Media('https://example.com/renewed.m3u8', start: position);
+        },
+      );
+      addTearDown(watchdog.dispose);
+      await watchdog.open(Media('https://example.com/video.m3u8'));
+      watchdogDecoder.report(const Duration(seconds: 10));
+      await _flush();
+      now = now.add(const Duration(seconds: 3));
+      watchdogDecoder.reportError('vd', 'error: decoding frame failed');
+      await _settle();
+
+      expect(refreshed, [const Duration(seconds: 10)]);
+      expect(watchdogDecoder.opened, hasLength(2));
+      expect(watchdogDecoder.state.playing, isTrue);
+      expect(errors, isEmpty);
+    },
+  );
+
+  test('un recovery fallito mostra un solo errore dopo i tentativi', () async {
+    final watchdogDecoder = _Decoder();
+    var attempts = 0;
+    final watchdog = ResumablePlayer(
+      platformPlayer: watchdogDecoder,
+      clock: () => now,
+      canPlay: () => true,
+      canRefresh: () => true,
+      onRefreshError: errors.add,
+      stallAfter: const Duration(seconds: 5),
+      startupGrace: Duration.zero,
+      recoveryAttempts: 2,
+      recoveryDelays: const [Duration.zero],
+      refreshMedia: (position, attempt) async {
+        attempts++;
+        throw StateError('offline');
+      },
+    );
+    addTearDown(watchdog.dispose);
+    await watchdog.open(Media('https://example.com/video.m3u8'));
+    watchdogDecoder.report(const Duration(seconds: 10));
+    await _flush();
+    watchdog.debugCheckHealth();
+
+    now = now.add(const Duration(seconds: 6));
+    watchdog.debugCheckHealth();
+    await _settle();
+
+    expect(attempts, 2);
+    expect(errors, hasLength(1));
+    expect(watchdogDecoder.state.playing, isFalse);
+    expect(watchdog.position, const Duration(seconds: 10));
+    expect(watchdog.recovery.value.phase, StreamRecoveryPhase.failed);
+  });
+
+  test('la pausa lunga riprova una risoluzione fallita', () async {
+    final retryDecoder = _Decoder();
+    var attempts = 0;
+    final retryPlayer = ResumablePlayer(
+      platformPlayer: retryDecoder,
+      clock: () => now,
+      canPlay: () => true,
+      canRefresh: () => true,
+      onRefreshError: errors.add,
+      stallAfter: null,
+      recoveryAttempts: 2,
+      recoveryDelays: const [Duration.zero],
+      refreshMedia: (position, attempt) async {
+        attempts++;
+        if (attempts == 1) throw StateError('offline');
+        return Media('https://example.com/renewed.m3u8', start: position);
+      },
+    );
+    addTearDown(retryPlayer.dispose);
+    await retryPlayer.open(Media('https://example.com/video.m3u8'));
+    retryDecoder.report(const Duration(seconds: 30));
+    await _flush();
+    await retryPlayer.pause();
+    now = now.add(const Duration(hours: 1));
+
+    await retryPlayer.play();
+    await _settle();
+
+    expect(attempts, 2);
+    expect(errors, isEmpty);
+    expect(retryDecoder.opened, hasLength(2));
+    expect(retryDecoder.state.playing, isTrue);
+  });
+
+  test('un video-only riceve la traccia audio esterna', () async {
+    await player.open(
+      Media(
+        'https://example.com/video.mp4',
+        extras: {
+          externalAudioUrlExtra: 'https://example.com/audio.m4a',
+          externalAudioLanguageExtra: 'it',
+        },
+      ),
+    );
+    await _flush();
+
+    expect(decoder.selectedAudio?.id, 'https://example.com/audio.m4a');
+    expect(decoder.selectedAudio?.uri, isTrue);
+    expect(decoder.selectedAudio?.language, 'it');
+    expect(decoder.opened, hasLength(1));
+    expect(decoder.state.playing, isTrue);
+  });
+
+  test('un errore della cache su disco non invalida lo stream', () async {
+    await player.open(Media('https://example.com/video.m3u8'));
+    decoder.report(const Duration(seconds: 10));
+    await _flush();
+
+    decoder.reportError('lavf', 'Failed to create file cache.');
+    await _flush();
+    await player.pause();
+    await player.play();
+    await _settle();
+
+    expect(refreshed, isEmpty);
+    expect(decoder.opened, hasLength(1));
+    expect(decoder.state.playing, isTrue);
+  });
+
+  test('un errore di avvio non rinnova un video che sta avanzando', () async {
+    final watchdogDecoder = _Decoder();
+    final watchdog = ResumablePlayer(
+      platformPlayer: watchdogDecoder,
+      clock: () => now,
+      canPlay: () => true,
+      canRefresh: () => true,
+      onRefreshError: errors.add,
+      stallAfter: const Duration(seconds: 5),
+      startupGrace: const Duration(seconds: 30),
+      recoveryDelays: const [Duration.zero],
+      refreshMedia: (position, attempt) async {
+        refreshed.add(position);
+        return Media('https://example.com/renewed.m3u8', start: position);
+      },
+    );
+    addTearDown(watchdog.dispose);
+    await watchdog.open(Media('https://example.com/video.m3u8'));
+    watchdogDecoder.report(const Duration(seconds: 10));
+    await _flush();
+
+    now = now.add(const Duration(seconds: 1));
+    watchdogDecoder.reportError('ffmpeg', 'error: tcp: connection reset');
+    await _flush();
+    now = now.add(const Duration(seconds: 1));
+    watchdogDecoder.report(const Duration(seconds: 11));
+    await _flush();
+    now = now.add(const Duration(seconds: 8));
+    watchdogDecoder.report(const Duration(seconds: 12));
+    await _flush();
+
+    now = now.add(const Duration(seconds: 2));
+    watchdog.debugCheckHealth();
+    await _settle();
+
+    expect(refreshed, isEmpty);
+    expect(errors, isEmpty);
+    expect(watchdogDecoder.opened, hasLength(1));
+    expect(watchdogDecoder.state.playing, isTrue);
+  });
 }

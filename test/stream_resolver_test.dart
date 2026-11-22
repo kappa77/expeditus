@@ -12,6 +12,38 @@ MuxedStreamInfo _muxed(int height) => MuxedStreamInfo.fromJson({
   'container': {'name': 'mp4'},
 });
 
+VideoOnlyStreamInfo _videoOnly(int height, {int? bitrate}) =>
+    VideoOnlyStreamInfo.fromJson({
+      ..._videoJson(height, bitrate: bitrate),
+      'url': 'https://example.com/$height-video.mp4',
+      'container': {'name': 'mp4'},
+      'codec': 'video/mp4',
+      'fragments': <dynamic>[],
+    });
+
+AudioOnlyStreamInfo _audio(
+  String id,
+  String displayName, {
+  required bool isDefault,
+  int tag = 140,
+  String codec = 'mp4a.40.2',
+  int bitrate = 128000,
+}) => AudioOnlyStreamInfo.fromJson({
+  ..._videoJson(0),
+  'tag': tag,
+  'url': 'https://example.com/audio-$id-$tag.m4a',
+  'container': {'name': 'mp4'},
+  'audioCodec': codec,
+  'codec': 'audio/mp4',
+  'fragments': <dynamic>[],
+  'bitrate': {'bitsPerSecond': bitrate},
+  'audioTrack': {
+    'displayName': displayName,
+    'id': id,
+    'audioIsDefault': isDefault,
+  },
+});
+
 Map<String, dynamic> _videoJson(int height, {int? bitrate}) => {
   'videoId': {'value': 'dQw4w9WgXcQ'},
   'tag': height,
@@ -302,5 +334,84 @@ void main() {
       maxHeight: 720,
     );
     expect(stream.quality, '1080p · HLS');
+  });
+
+  test('senza muxed combina video e audio originale', () {
+    final stream = StreamResolver.selectStream(
+      StreamManifest([
+        _videoOnly(1080),
+        _videoOnly(720),
+        _audio('en-US.10', 'English (US)', isDefault: true),
+        _audio('it.4', 'Italian original', isDefault: false),
+      ]),
+      maxHeight: 720,
+      preferredLanguage: 'it',
+    );
+    expect(stream.kind, 'video');
+    expect(stream.quality, '720p · video+audio');
+    expect(stream.url.path, '/720-video.mp4');
+    expect(stream.audioUrl?.path, contains('audio-it.4-140.m4a'));
+    expect(stream.audioLanguage, 'it');
+  });
+
+  test('l’audio originale vince sul doppiaggio anche se è il default', () {
+    final stream = StreamResolver.selectStream(
+      StreamManifest([
+        _muxed(360),
+        _videoOnly(1080),
+        _audio('en-US.10', 'English original', isDefault: true),
+        _audio('it.4', 'Italian', isDefault: false),
+      ]),
+    );
+    expect(stream.kind, 'video');
+    expect(stream.audioLanguage, 'en-US');
+    expect(stream.url.path, '/1080-video.mp4');
+  });
+
+  test('un solo audio mantiene lo stream muxed', () {
+    final stream = StreamResolver.selectStream(
+      StreamManifest([
+        _muxed(360),
+        _videoOnly(1080),
+        _audio('it.4', 'Italian original', isDefault: true),
+      ]),
+    );
+    expect(stream.kind, 'muxed');
+  });
+
+  test('il fallback audio-only sceglie la traccia originale', () {
+    final stream = StreamResolver.selectStream(
+      StreamManifest([
+        _audio('en-US.10', 'English (US)', isDefault: true),
+        _audio('it.4', 'Italian original', isDefault: false),
+      ]),
+      preferredLanguage: 'it',
+    );
+    expect(stream.kind, 'audio');
+    expect(stream.url.path, contains('it.4'));
+  });
+
+  test('i client YouTube sono localizzati senza mutare quelli globali', () {
+    final localized = localizeYoutubeClient(YoutubeApiClient.ios, 'it');
+    expect(localized.payload['context']['client']['hl'], 'it');
+    expect(localized.payload['context']['client']['gl'], 'IT');
+    expect(YoutubeApiClient.ios.payload['context']['client']['hl'], 'en');
+    expect(
+      identical(
+        localizeYoutubeClient(YoutubeApiClient.ios, null),
+        YoutubeApiClient.ios,
+      ),
+      isTrue,
+    );
+  });
+
+  test('il fallback finale preferisce il muxed compatibile', () {
+    final stream = StreamResolver.selectStream(
+      StreamManifest([_hls(1080), _muxed(360)]),
+      maxHeight: 480,
+      preferMuxed: true,
+    );
+    expect(stream.kind, 'muxed');
+    expect(stream.quality, '360p · muxed');
   });
 }

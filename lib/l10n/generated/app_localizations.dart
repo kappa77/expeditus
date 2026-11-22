@@ -1374,6 +1374,24 @@ abstract class AppLocalizations {
   /// **'Stream unavailable'**
   String get playerErrorStreamTitle;
 
+  /// No description provided for @streamReconnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Unstable connection. Restoring the stream… ({attempt}/{total})'**
+  String streamReconnecting(int attempt, int total);
+
+  /// No description provided for @networkUnstable.
+  ///
+  /// In en, this message translates to:
+  /// **'The network connection is missing or unstable. Check your connection and try again.'**
+  String get networkUnstable;
+
+  /// No description provided for @streamStalled.
+  ///
+  /// In en, this message translates to:
+  /// **'The stream stopped. Try to resume playback.'**
+  String get streamStalled;
+
   /// No description provided for @technicalDetails.
   ///
   /// In en, this message translates to:
