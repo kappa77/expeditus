@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
 import '../services/loudness_analyzer.dart';
+import '../services/playback_keep_alive.dart';
 import '../services/resumable_player.dart';
 import '../services/stream_playback_policy.dart';
 import '../services/stream_resolver.dart';
@@ -85,10 +86,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   bool _castInFlight = false;
   bool _resumeLocalWhenRemoteStarts = false;
   int _lastPersistedSeconds = -1;
-  bool _wasPlayingBeforeBackground = false;
-  bool _pausedForBackground = false;
-  Future<void>? _backgroundPause;
-  bool _inBackground = false;
+  final Object _playbackKeepAliveToken = Object();
+  bool _appInBackground = false;
   bool _opening = false;
   bool _retrying = false;
   Future<void>? _errorPause;
@@ -111,10 +110,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       playbackPolicy: StreamPlaybackPolicy(android: isAndroid),
       refreshMedia: _refreshMedia,
       onRefreshError: _showPlaybackError,
-      canPlay: () =>
-          mounted &&
-          (!_inBackground ||
-              (widget.state.castController.isCasting && _castMuted)),
+      // Playback continues while the app is backgrounded. The page only
+      // stops the player when it is disposed, when the user pauses, or when
+      // the stream cannot be recovered.
+      canPlay: () => mounted,
       canRefresh: () =>
           !widget.state.castController.isCasting && _localPath == null,
     );
@@ -155,6 +154,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           return;
         }
         _markWatched();
+        unawaited(PlaybackKeepAlive.end(_playbackKeepAliveToken));
       }),
     );
     // Persist the exact position as soon as playback stops, so pausing and
@@ -337,6 +337,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       // The analysis runs beside playback: the first seconds are audible at
       // the normal level, then the gain ramps up once the measurement is in.
       unawaited(_applyVolumeNormalization());
+      _ensurePlaybackKeepAlive();
       if (widget.state.castController.isConnected) {
         // Mute immediately, before the cast-friendly stream is resolved, so
         // the local audio never overlaps the renderer.
@@ -416,6 +417,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     // Never leave audio playing behind the error stage. Recoverable stream
     // errors are handled by ResumablePlayer and never reach this method.
     _errorPause = _pauseAfterError();
+    unawaited(PlaybackKeepAlive.end(_playbackKeepAliveToken));
     setState(() {
       _error = _friendlyError(error, context.l10n);
       _errorDetails = error.toString().replaceFirst('Exception: ', '');
@@ -512,58 +514,42 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     await widget.state.saveProgress(widget.video.id, seconds);
   }
 
-  void _enterBackground() {
-    if (_inBackground) return;
-    _inBackground = true;
-    _wasPlayingBeforeBackground =
-        _player.isPlaybackIntended || (!_ready && _opening);
+  /// Keeps the process alive on Android while the app is in the background.
+  ///
+  /// The player is not paused here: the video keeps advancing, just like a
+  /// music player. On Windows this is a no-op; on Android the foreground
+  /// service (with its low-priority notification) stops the OS from killing
+  /// the Flutter engine during playback. The service is deliberately started
+  /// from the first lifecycle callback (`inactive`), while the activity is
+  /// still visible, because Android 12+ restricts foreground-service starts
+  /// from the background.
+  void _onAppBackgrounded() {
+    _appInBackground = true;
     unawaited(_persistProgress());
-    // While casting, the local player is a muted clock and the TV owns
-    // playback: leave it alone.
-    final cast = widget.state.castController;
-    if (cast.isCasting && _castMuted) return;
-    if (_wasPlayingBeforeBackground) {
-      _pausedForBackground = true;
-      final pause = _pauseForBackground();
-      _backgroundPause = pause;
-      unawaited(pause);
-    }
+    _ensurePlaybackKeepAlive();
   }
 
-  Future<void> _pauseForBackground() async {
-    try {
-      await _player.pause();
-    } on Object {
-      // The player may be closing.
-    }
+  /// Starts the Android keep-alive when playback is expected to continue.
+  ///
+  /// Called on the first background lifecycle event and again after a
+  /// successful reopen while the app is still hidden (for example a retry
+  /// after a stream error).
+  void _ensurePlaybackKeepAlive() {
+    if (!_appInBackground) return;
+    final playing =
+        _player.isPlaybackIntended ||
+        (!_ready && _opening) ||
+        (widget.state.castController.isCasting && _castMuted);
+    if (!playing) return;
+    unawaited(
+      PlaybackKeepAlive.begin(_playbackKeepAliveToken, widget.video.title),
+    );
   }
 
-  Future<void> _leaveBackground() async {
-    if (!_inBackground) return;
-    _inBackground = false;
+  void _onAppResumed() {
+    _appInBackground = false;
     _player.notifyAppResumed();
-    final wasPlaying = _wasPlayingBeforeBackground;
-    final pausedByUs = _pausedForBackground;
-    final pause = _backgroundPause;
-    _wasPlayingBeforeBackground = false;
-    _pausedForBackground = false;
-    _backgroundPause = null;
-
-    // A very fast background/foreground transition may still be pausing.
-    if (pause != null) await pause;
-    if (!mounted || !_ready || _inBackground || _error != null) return;
-    final cast = widget.state.castController;
-    if (cast.isCasting && _castMuted) return;
-    // ResumablePlayer restores the pause point and renews stale URLs before
-    // playing. Manually paused videos stay paused when returning to the app.
-    if (!mounted || _inBackground) return;
-    if (wasPlaying && pausedByUs && !_player.state.playing) {
-      try {
-        await _player.play();
-      } on Object {
-        // The player may be closing.
-      }
-    }
+    unawaited(PlaybackKeepAlive.end(_playbackKeepAliveToken));
   }
 
   void _markWatched() {
@@ -956,15 +942,17 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
-        unawaited(_leaveBackground());
+        _onAppResumed();
       case AppLifecycleState.inactive:
-      case AppLifecycleState.detached:
-        unawaited(_persistProgress());
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-        // On the way back to the foreground Android also reports `hidden`
-        // before `resumed`; the `_inBackground` guard ignores that one.
-        _enterBackground();
+        // `inactive` arrives first on both Android and Windows. Starting the
+        // keep-alive on the first callback leaves the activity visible, which
+        // is what Android requires for a foreground service.
+        _onAppBackgrounded();
+      case AppLifecycleState.detached:
+        unawaited(_persistProgress());
+        unawaited(PlaybackKeepAlive.end(_playbackKeepAliveToken));
     }
   }
 
@@ -990,6 +978,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
     _subscriptions.clear();
     _normalizationEpoch++;
+    unawaited(PlaybackKeepAlive.end(_playbackKeepAliveToken));
     unawaited(_loudnessAnalyzer.dispose());
     unawaited(_player.dispose());
     super.dispose();

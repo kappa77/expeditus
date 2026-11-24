@@ -37,6 +37,25 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
+            "expeditus/playback",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    startPlaybackService(call.argument<String>("title"))
+                    result.success(null)
+                }
+
+                "stop" -> {
+                    stopService(Intent(this, PlaybackService::class.java))
+                    result.success(null)
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
             "expeditus/downloads",
         ).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -58,6 +77,21 @@ class MainActivity : FlutterActivity() {
 
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun startPlaybackService(title: String?) {
+        val intent = Intent(this, PlaybackService::class.java)
+            .putExtra(PlaybackService.EXTRA_TITLE, title)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (_: Exception) {
+            // Android 12+ can refuse a foreground service started from the
+            // background. Playback itself continues on a best-effort basis.
         }
     }
 

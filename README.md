@@ -28,6 +28,7 @@ One row per channel. The latest video. That is the whole feed.
 - **Four interface languages:** Italian, English, German, and Spanish. Choose one in Settings, or follow the system language.
 - **Ad-free playback:** Expeditus does not load the YouTube player, so you do not get player ads or end-screen recommendations.
 - **Resilient playback:** a few seconds of prebuffer and a larger read-ahead cache absorb short network interruptions; expired or stalled streams are renewed automatically at the current position, and transient errors never cover a video that is still playing.
+- **Background playback:** when the window is minimized or the app is sent to the background, playback keeps advancing on Windows and Android. Android holds a low-priority `mediaPlayback` foreground notification so the engine is not killed, and stops it when the app returns, playback ends or the player closes.
 - **Original audio:** YouTube requests follow the app language, so the original track is preferred over automatic dubs. Videos that only expose separate video/audio streams play the video with its original audio instead of falling back to audio only.
 - **DLNA casting:** send the current video to a TV or MediaRenderer on the same network (desktop and Android). Expeditus discovers devices with SSDP, remembers the list, and has a refresh button to search again. While connected, every opened video plays both on the device and in the app, with the app audio muted for the whole connection (including buffering and errors); audio returns only after disconnecting or choosing **Play here only**. If the renderer does not start, the player shows the thumbnail with a play symbol so you can start it; connection and streaming errors are shown in the cast dialog and in a snackbar.
 - **SponsorBlock:** optionally skip creator-read sponsors and other marked segments.
@@ -40,7 +41,7 @@ One row per channel. The latest video. That is the whole feed.
 - **±10 second seeking** with debounce: several quick presses become one combined jump.
 - **Keyboard-first (desktop):** move, open, mark watched, save to Watch later, search, and refresh without touching the mouse.
 - **Touch-first Android layout:** bottom navigation, full-width search with a clear button, row action sheets, pull-to-refresh, safe-area handling, and layouts that follow the system font size.
-- **Android app:** adaptive icon, dark splash screen, offline downloads kept alive by a foreground service, and no Windows-only update entries.
+- **Android app:** adaptive icon, dark splash screen, offline downloads and background playback kept alive by foreground services, and no Windows-only update entries.
 - **Focus mode:** hide descriptions and keep only channel and title.
 
 ## Casting to a TV

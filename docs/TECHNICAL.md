@@ -148,8 +148,9 @@ with `Media.start` at the pause point. Resolution failures are retried with
 backoff. Brief pauses reuse the URL and restore the decoder's position if
 needed. Local files and the muted DLNA clock do not renew URLs. A manual pause
 remains paused when the app returns to the foreground. Pending resumes are
-invalidated by pause, seek, stop or disposal, and a load that finishes in the
-background stays paused.
+invalidated by pause, seek, stop or disposal. Because background playback is
+supported, a load that finishes in the background starts playing immediately
+instead of waiting for the foreground.
 
 The player also supervises the stream while it is playing. A one-second health
 check detects a position that has not advanced for 20 seconds; the threshold
@@ -158,9 +159,21 @@ treated as device suspension and only resets the watchdog. Recovery pauses the
 local player, resolves a fresh URL and reopens it at the current position, with
 up to three attempts and backoff. The second attempt lowers the Android quality
 cap to 480p (720p on desktop), and the third prefers a muxed MP4 and 360p
-(480p on desktop). Pause, seek, stop, backgrounding and disposal cancel a
-recovery. Three unsuccessful recovery cycles without playback progress show a
-recoverable error instead of retrying forever.
+(480p on desktop). Pause, seek, stop and disposal cancel a recovery;
+backgrounding does not, because playback is expected to continue. Three
+unsuccessful recovery cycles without playback progress show a recoverable error
+instead of retrying forever.
+
+Background playback is intentional. `PlayerPage` no longer pauses on
+`AppLifecycleState.hidden`/`paused` and passes `canPlay: () => mounted`, so the
+position, watchdog and recovery keep running while the app is hidden. `Video`
+already has `pauseUponEnteringBackgroundMode: false`. On Android the first
+lifecycle callback (`inactive`, while the activity is still visible) starts a
+`mediaPlayback` foreground service with a low-priority notification; it is
+released when the app returns, playback ends with an error or completion, or the
+player page is disposed. The service uses `stopWithTask=true`, so removing the
+task from recents does not leave audio playing without a UI. Desktop needs no
+keep-alive.
 
 mpv error logs are not shown as fatal by themselves. Network errors are ignored
 while the position advances; they only make the watchdog more responsive.
@@ -399,7 +412,7 @@ flutter build apk --debug
 flutter run -d <android-device>
 ```
 
-The main manifest declares `INTERNET`, the data-sync foreground-service permissions, and `POST_NOTIFICATIONS`. `DownloadKeepAlive` starts `DownloadService` while a video download runs; the service keeps the process alive and shows a low-priority notification. A download that does not survive process death is reset to `none` on the next launch.
+The main manifest declares `INTERNET`, the data-sync and media-playback foreground-service permissions, and `POST_NOTIFICATIONS`. `DownloadKeepAlive` starts `DownloadService` while a video download runs; the service keeps the process alive and shows a low-priority notification. `PlaybackKeepAlive` starts `PlaybackService` (`mediaPlayback`, `stopWithTask=true`) while a video is expected to keep playing in the background. A download that does not survive process death is reset to `none` on the next launch.
 
 The Android build hides Windows-only update entries. It uses the adaptive icon and dark launch background under `android/app/src/main/res`. Release APKs need a release signing configuration before distribution.
 

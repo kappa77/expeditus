@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.9
+
+### Added
+
+- Playback: videos keep playing when the app is minimized or sent to the
+  background on Windows and Android. Android starts a `mediaPlayback`
+  foreground service from the first lifecycle event, with a low-priority
+  notification, and stops it when the app returns, playback ends or the player
+  closes. Desktop needs no service; the player page no longer pauses on
+  background lifecycle events.
+
 ## 2.5.8
 
 ### Added
