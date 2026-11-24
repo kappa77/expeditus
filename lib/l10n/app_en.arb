@@ -350,6 +350,9 @@
   "sectionReading": "Reading",
   "hideDescriptions": "Hide descriptions",
   "hideDescriptionsSubtitle": "Show only channel and title. Focus mode.",
+  "sectionPlayback": "Playback",
+  "normalizeVolume": "Raise volume",
+  "normalizeVolumeSubtitle": "Analyzes the first 10 seconds of local and offline videos, then raises quieter files without exceeding peaks.",
   "sectionUpdate": "Refresh",
   "refreshEvery": "Every {minutes} minutes",
   "@refreshEvery": {

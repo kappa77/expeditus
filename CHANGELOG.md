@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5.8
+
+### Added
+
+- Playback: local and offline video files are measured on their first
+  10 seconds and the mixer is raised with a peak-limited gain (up to +6 dB).
+  The measurement runs in a hidden `ao=pcm` libmpv instance, never opens the
+  audio device, and is cached by file size/mtime. Streamed YouTube playback is
+  untouched: YouTube already normalizes it, and a second request for a signed
+  stream could invalidate the one the player is using.
+- Settings: a **Raise volume** switch turns the normalization on or off.
+
 ## 2.5.7
 
 ### Fixed

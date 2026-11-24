@@ -810,6 +810,24 @@ abstract class AppLocalizations {
   /// **'Show only channel and title. Focus mode.'**
   String get hideDescriptionsSubtitle;
 
+  /// No description provided for @sectionPlayback.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback'**
+  String get sectionPlayback;
+
+  /// No description provided for @normalizeVolume.
+  ///
+  /// In en, this message translates to:
+  /// **'Raise volume'**
+  String get normalizeVolume;
+
+  /// No description provided for @normalizeVolumeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzes the first 10 seconds of local and offline videos, then raises quieter files without exceeding peaks.'**
+  String get normalizeVolumeSubtitle;
+
   /// No description provided for @sectionUpdate.
   ///
   /// In en, this message translates to:

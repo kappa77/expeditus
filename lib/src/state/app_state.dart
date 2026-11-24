@@ -102,6 +102,11 @@ class AppState extends ChangeNotifier {
   DateTime? lastRefresh;
 
   bool hideDescriptions = false;
+
+  /// Raise the level of quiet local files and separate audio tracks after a
+  /// short analysis. On by default: the measured gain is peak-limited, so
+  /// already loud media is left untouched.
+  bool normalizeVolume = true;
   bool sponsorBlockEnabled = true;
   Set<String> sponsorCategories = {'sponsor', 'selfpromo'};
   int refreshMinutes = 30;
@@ -187,6 +192,7 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     final settings = await db.getSettings();
     hideDescriptions = settings['hideDescriptions'] == '1';
+    normalizeVolume = settings['normalizeVolume'] != '0';
     sponsorBlockEnabled = settings['sponsorBlockEnabled'] != '0';
     refreshMinutes = int.tryParse(settings['refreshMinutes'] ?? '') ?? 30;
     refreshMinutes = refreshMinutes.clamp(5, 240);
@@ -850,6 +856,12 @@ class AppState extends ChangeNotifier {
   Future<void> setHideDescriptions(bool value) async {
     hideDescriptions = value;
     await db.setSetting('hideDescriptions', value ? '1' : '0');
+    _notify();
+  }
+
+  Future<void> setNormalizeVolume(bool value) async {
+    normalizeVolume = value;
+    await db.setSetting('normalizeVolume', value ? '1' : '0');
     _notify();
   }
 

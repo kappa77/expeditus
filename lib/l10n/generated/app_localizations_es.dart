@@ -488,6 +488,16 @@ class AppLocalizationsEs extends AppLocalizations {
       'Mostrar solo canal y título. Modo concentración.';
 
   @override
+  String get sectionPlayback => 'Reproducción';
+
+  @override
+  String get normalizeVolume => 'Subir el volumen';
+
+  @override
+  String get normalizeVolumeSubtitle =>
+      'Analiza los primeros 10 segundos de vídeos locales y disponibles sin conexión, y sube los más silenciosos sin superar los picos.';
+
+  @override
   String get sectionUpdate => 'Actualización';
 
   @override

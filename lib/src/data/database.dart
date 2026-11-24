@@ -30,7 +30,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 8,
+        version: 9,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -453,6 +453,36 @@ class AppDatabase {
     );
   }
 
+  Future<AudioLoudness?> getAudioLoudness(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'audio_loudness',
+      columns: ['rms_db', 'peak_db'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return AudioLoudness(
+      rmsDb: (rows.first['rms_db'] as num).toDouble(),
+      peakDb: (rows.first['peak_db'] as num).toDouble(),
+    );
+  }
+
+  Future<void> saveAudioLoudness(String key, AudioLoudness value) async {
+    final db = await database;
+    await db.insert(
+      'audio_loudness',
+      {
+        'key': key,
+        'rms_db': value.rmsDb,
+        'peak_db': value.peakDb,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   Future<Map<String, String>> getSettings() async {
     final db = await database;
     final rows = await db.query('settings');
@@ -548,6 +578,14 @@ Future<void> _createSchema(Database db) async {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS audio_loudness (
+      key TEXT PRIMARY KEY,
+      rms_db REAL NOT NULL,
+      peak_db REAL NOT NULL,
+      updated_at INTEGER NOT NULL
     )
   ''');
 }
@@ -658,6 +696,16 @@ Future<void> _migrate(Database db, int oldVersion, int newVersion) async {
         title TEXT NOT NULL,
         added_at INTEGER NOT NULL,
         duration_seconds INTEGER
+      )
+    ''');
+  }
+  if (oldVersion < 9) {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS audio_loudness (
+        key TEXT PRIMARY KEY,
+        rms_db REAL NOT NULL,
+        peak_db REAL NOT NULL,
+        updated_at INTEGER NOT NULL
       )
     ''');
   }

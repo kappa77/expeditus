@@ -185,10 +185,18 @@ class ResumablePlayer extends Player {
   Future<void> _ensurePolicy() async {
     if (_policyApplied) return;
     _policyApplied = true;
-    final policy = playbackPolicy;
-    if (policy == null) return;
     final platform = this.platform;
     if (platform is! NativePlayer) return;
+    // Allow the peak-limited normalization gain (up to +6 dB) to exceed the
+    // default 130% ceiling. The actual setting is capped in the gain policy.
+    try {
+      await platform.setProperty('volume-max', '200');
+    } on Object {
+      // An older libmpv may use its default ceiling; normalization is capped
+      // by the measured peak and remains safe.
+    }
+    final policy = playbackPolicy;
+    if (policy == null) return;
     await policy.apply((name, value) => platform.setProperty(name, value));
   }
 

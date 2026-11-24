@@ -99,10 +99,11 @@ Tables:
 - `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, optional default playback rate, last error.
 - `videos`: id, channel, title, description, publication time, first-seen time, duration, status, watch-later flag, watch-later save time, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
 - `local_videos`: path, title, added time, duration.
+- `audio_loudness`: local-file cache key, gated RMS dBFS, absolute peak dBFS, update time.
 - `bookmarks`: id, video id, position seconds, personal note, creation time.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. Version 8 added the `local_videos` table. All migrations are idempotent.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. Version 8 added the `local_videos` table. Version 9 added the `audio_loudness` cache. All migrations are idempotent.
 
 Migrations are idempotent: tables and indexes are created with `IF NOT EXISTS`, every added column is checked with `PRAGMA table_info` before the `ALTER TABLE`, and backfills only update rows whose value is still `NULL`. An interrupted or partially applied upgrade can therefore be retried safely without "duplicate column name" or "table already exists" errors.
 
@@ -167,6 +168,24 @@ Video/audio decoder errors trigger a bounded stream reopen even when the other
 track keeps advancing, which avoids a frozen picture with continuous audio. The
 error stage appears when opening fails or after recovery is exhausted, and the
 player is paused before it is shown so audio never continues behind the error.
+
+Quiet local and offline video files are normalized by a small helper player
+created next to the main one. It sets `ao=pcm` with a temporary WAV target,
+`untimed=yes`, `vid=no` and `end=10`, so it decodes only the first ten seconds
+and never opens the audio device; the whole analysis takes well under a second
+for a local file. The WAV is measured with EBU-style gating (400 ms
+blocks, absolute and relative gates) to ignore silence, then a static gain is
+computed against a -15 dBFS RMS target with a -1 dBFS peak ceiling and a +6 dB
+cap. The gain is applied to mpv's `volume` property in six short steps. mpv
+uses a cubic volume scale, so the gain-to-percentage conversion is
+`100 * 10^(dB / 60)`; `volume-max` is raised to 200 so the cap fits. The raw
+RMS/peak values are cached in `audio_loudness` keyed by file path/size/mtime,
+which avoids re-analysis on the next play. Remote streams are intentionally
+skipped: YouTube already normalizes their loudness, a muxed window would
+download video data again, and a second request for a signed split-audio URL
+can invalidate the one the player is using. DLNA casting mutes the local
+player; the normalization gain is restored after the cast ends instead of the
+pre-cast volume.
 
 `StreamPlaybackPolicy` tunes the native player before the first media opens:
 `cache-pause-initial=yes`, `cache-pause-wait=4`, `cache-secs=45` on Android and

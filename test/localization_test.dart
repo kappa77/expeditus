@@ -28,6 +28,11 @@ void main() {
     expect(es.videosLabel(3), '3 vídeos');
     expect(de.channelsImportedCount(2), '2 Kanäle importiert');
     expect(es.channelsNotUpdated(2), '2 canales no actualizados');
+
+    expect(it.normalizeVolume, 'Alza il volume');
+    expect(en.normalizeVolume, 'Raise volume');
+    expect(de.normalizeVolume, 'Lautstärke anheben');
+    expect(es.normalizeVolume, 'Subir el volumen');
   });
 
   test('la lingua scelta viene salvata e applicata', () async {

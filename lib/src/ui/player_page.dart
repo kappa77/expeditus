@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
+import '../services/loudness_analyzer.dart';
 import '../services/resumable_player.dart';
 import '../services/stream_playback_policy.dart';
 import '../services/stream_resolver.dart';
@@ -47,6 +48,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late final ResumablePlayer _player;
   late final VideoController _controller;
   late final StreamResolver _streamResolver;
+  late final LoudnessAnalyzer _loudnessAnalyzer = LoudnessAnalyzer();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   List<SponsorSegment> _segments = const [];
   Duration? _duration;
@@ -90,6 +92,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   bool _opening = false;
   bool _retrying = false;
   Future<void>? _errorPause;
+  int _normalizationEpoch = 0;
+  double _normalizationGainDb = 0;
 
   @override
   void initState() {
@@ -330,13 +334,18 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         _toast(l10n.resumedFrom(formatDuration(startAt.inSeconds)));
       }
       setState(() => _ready = true);
+      // The analysis runs beside playback: the first seconds are audible at
+      // the normal level, then the gain ramps up once the measurement is in.
+      unawaited(_applyVolumeNormalization());
       if (widget.state.castController.isConnected) {
         // Mute immediately, before the cast-friendly stream is resolved, so
         // the local audio never overlaps the renderer.
         if (!_castMuted) _volumeBeforeCast = _player.state.volume;
+        // Mark the mute before awaiting so a normalization ramp that is in
+        // flight cannot restore the volume after this point.
+        _castMuted = true;
         await _player.setVolume(0);
         if (!mounted) return;
-        _castMuted = true;
         if (mounted) setState(() {});
       }
       if (!widget.video.isLocal) {
@@ -663,9 +672,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
     final startAt = _playbackPosition;
     if (!_castMuted) _volumeBeforeCast = _player.state.volume;
+    _castMuted = true;
     await _player.setVolume(0);
     if (!mounted) return;
-    _castMuted = true;
     _resumeLocalWhenRemoteStarts = true;
     _castStartedAt = DateTime.now();
     _lastCastError = null;
@@ -725,10 +734,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
 
     if (!_castMuted) _volumeBeforeCast = _player.state.volume;
+    _castMuted = true;
     await _player.setVolume(0);
     if (!mounted) return;
     final startAt = _playbackPosition;
-    _castMuted = true;
     _resumeLocalWhenRemoteStarts = true;
     _castStartedAt = DateTime.now();
     _lastCastError = null;
@@ -769,7 +778,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _resumeLocalWhenRemoteStarts = false;
     _castMuted = false;
     try {
-      await _player.setVolume(_volumeBeforeCast.clamp(0, 100));
+      // A normalization gain can push the mixer above 100%; restore it as
+      // measured instead of capping it back to the plain level.
+      await _player.setVolume(
+        _normalizationGainDb > 0
+            ? AudioLoudnessCodec.volumePercentForGain(_normalizationGainDb)
+            : _volumeBeforeCast.clamp(0, 200),
+      );
       if (resumeLocal && !_player.state.playing) {
         unawaited(_player.play());
       }
@@ -803,9 +818,94 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (mounted) _toast(context.l10n.castStopped);
   }
 
+  /// Measures a quiet local file once, caches the result and raises the local
+  /// mixer without opening a second audio device.
+  ///
+  /// Remote streams are intentionally excluded: YouTube already normalizes
+  /// them, a muxed window would download video data again, and a second
+  /// request for a signed split-audio URL can invalidate the one the player is
+  /// using. Offline downloads are local files and use the same path.
+  Future<void> _applyVolumeNormalization() async {
+    if (!widget.state.normalizeVolume) return;
+    final source = _normalizationSource();
+    if (source == null) return;
+
+    final epoch = ++_normalizationEpoch;
+    final key = await _normalizationKey();
+    if (!mounted || epoch != _normalizationEpoch) return;
+
+    AudioLoudness? sample;
+    try {
+      sample = await widget.state.db.getAudioLoudness(key);
+    } on Object {
+      // A cache failure must not block playback; measure again below.
+    }
+    if (!mounted || epoch != _normalizationEpoch) return;
+
+    if (sample == null) {
+      sample = await _loudnessAnalyzer.analyze(source);
+      if (!mounted || epoch != _normalizationEpoch || sample == null) return;
+      try {
+        await widget.state.db.saveAudioLoudness(key, sample);
+      } on Object {
+        // Losing the cache only costs a future re-analysis.
+      }
+    }
+
+    if (!mounted ||
+        epoch != _normalizationEpoch ||
+        !widget.state.normalizeVolume) {
+      return;
+    }
+    final gain = AudioLoudnessCodec.gainFor(sample);
+    _normalizationGainDb = gain;
+    if (gain <= 0 || _castMuted) return;
+    await _rampAudioGain(gain);
+  }
+
+  Playable? _normalizationSource() {
+    final localPath = _localPath;
+    if (localPath == null) return null;
+    return Media(Uri.file(localPath).toString());
+  }
+
+  Future<String> _normalizationKey() async {
+    final localPath = _localPath!;
+    try {
+      final stat = await File(localPath).stat();
+      return 'local:$localPath|${stat.size}|'
+          '${stat.modified.millisecondsSinceEpoch}';
+    } on Object {
+      return 'local:$localPath';
+    }
+  }
+
+  /// Moves the mixer in small steps so a measured gain never pops. The loop
+  /// stops if the page closes or a cast starts and mutes the local player.
+  Future<void> _rampAudioGain(double gainDb) async {
+    final start = _player.state.volume;
+    if (!start.isFinite || start <= 0) return;
+    final target = AudioLoudnessCodec.volumePercentForGain(gainDb);
+    const steps = 6;
+    for (var step = 1; step <= steps; step++) {
+      if (!mounted || _castMuted || !widget.state.normalizeVolume) return;
+      final value = start + (target - start) * step / steps;
+      try {
+        await _player.setVolume(value);
+      } on Object {
+        return;
+      }
+      if (step < steps) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+    }
+  }
+
   Future<void> _retry() async {
     if (_opening || _retrying || !mounted) return;
     _retrying = true;
+    _normalizationEpoch++;
+    unawaited(_loudnessAnalyzer.cancel());
     try {
       final errorPause = _errorPause;
       _errorPause = null;
@@ -889,6 +989,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       unawaited(subscription.cancel());
     }
     _subscriptions.clear();
+    _normalizationEpoch++;
+    unawaited(_loudnessAnalyzer.dispose());
     unawaited(_player.dispose());
     super.dispose();
   }

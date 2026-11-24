@@ -379,3 +379,18 @@ class VideoBookmark {
     );
   }
 }
+
+/// Loudness measured on the first seconds of a media source.
+///
+/// The analyzer stores the raw measurements instead of the final gain, so a
+/// future target or peak ceiling can be applied without decoding the media
+/// again.
+class AudioLoudness {
+  const AudioLoudness({required this.rmsDb, required this.peakDb});
+
+  /// Gated RMS level, in dBFS.
+  final double rmsDb;
+
+  /// Absolute sample peak, in dBFS.
+  final double peakDb;
+}

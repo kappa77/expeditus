@@ -101,6 +101,17 @@ class SettingsDialog extends StatelessWidget {
                 onChanged: state.setHideDescriptions,
               ),
               const Divider(height: 24),
+              _SectionLabel(l10n.sectionPlayback),
+              SwitchListTile(
+                key: const Key('settings-normalize-volume'),
+                contentPadding: EdgeInsets.zero,
+                title: Text(l10n.normalizeVolume),
+                subtitle: Text(l10n.normalizeVolumeSubtitle),
+                value: state.normalizeVolume,
+                activeThumbColor: ExpeditusColors.accent,
+                onChanged: state.setNormalizeVolume,
+              ),
+              const Divider(height: 24),
               _SectionLabel(l10n.sectionUpdate),
               const SizedBox(height: 6),
               DropdownButtonFormField<int>(
