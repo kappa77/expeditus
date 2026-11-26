@@ -100,7 +100,8 @@ class _ChannelPageState extends State<ChannelPage>
         final missing = _videos
             .where(
               (video) =>
-                  !video.keywordsFetched && !attempted.contains(video.id),
+                  (!video.durationFetched || !video.keywordsFetched) &&
+                  !attempted.contains(video.id),
             )
             .toList();
         if (missing.isEmpty) break;
@@ -110,10 +111,14 @@ class _ChannelPageState extends State<ChannelPage>
           await Future.wait(
             batch.map((video) async {
               attempted.add(video.id);
-              final updated = await widget.state.fetchVideoTags(video);
-              if (!mounted || !updated.keywordsFetched) return;
+              final updated = await widget.state.fetchVideoMetadata(video);
+              if (!mounted) return;
+              if (!updated.durationFetched && !updated.keywordsFetched) return;
               setState(() {
                 _videos = _videos
+                    .map((item) => item.id == updated.id ? updated : item)
+                    .toList();
+                _history = _history
                     .map((item) => item.id == updated.id ? updated : item)
                     .toList();
               });

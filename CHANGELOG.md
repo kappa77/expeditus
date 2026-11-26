@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.10
+
+### Added
+
+- Lists: video duration is shown in the feed, RSS history, Watch later, Saved
+  and channel lists. The RSS feed does not expose it, so Expeditus reads it from
+  the public watch page lazily (together with the tags), limited to three
+  concurrent requests and cached in SQLite. Unknown lengths are cached too, so a
+  live stream does not trigger repeated lookups.
+
 ## 2.5.9
 
 ### Added

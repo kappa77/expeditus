@@ -1208,6 +1208,9 @@ class _FeedView extends StatelessWidget {
       },
       onToggleWatched: video.isLocal ? null : () => state.toggleWatched(video),
       onToggleQueued: video.isLocal ? null : () => state.toggleQueued(video),
+      onNeedMetadata: video.isLocal
+          ? null
+          : () => state.requestVideoMetadata(video),
       onChannelTap: video.isLocal ? null : () => onChannelTap(video.channelId),
       onRemove: video.isLocal ? () => state.removeLocalVideo(video) : null,
       showWatchLaterDate: state.view == 'queue' || state.view == 'watch-later',

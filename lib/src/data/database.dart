@@ -30,7 +30,7 @@ class AppDatabase {
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 9,
+        version: 10,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
@@ -148,15 +148,19 @@ class AppDatabase {
       '''
       INSERT INTO videos (
         id, channel_id, title, description, published_at, first_seen_at,
-        duration_seconds, status, queued, queued_at, progress_seconds,
-        fetched_at, source
+        duration_seconds, duration_fetched, status, queued, queued_at,
+        progress_seconds, fetched_at, source
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
         published_at = excluded.published_at,
         duration_seconds = COALESCE(excluded.duration_seconds, videos.duration_seconds),
+        duration_fetched = CASE
+          WHEN excluded.duration_fetched = 1 THEN 1
+          ELSE videos.duration_fetched
+        END,
         fetched_at = excluded.fetched_at,
         source = CASE
           WHEN excluded.source = 'rss' THEN 'rss'
@@ -171,6 +175,7 @@ class AppDatabase {
         video.publishedAt,
         video.firstSeenAt ?? now,
         video.durationSeconds,
+        video.durationFetched ? 1 : 0,
         video.status,
         video.queued ? 1 : 0,
         video.queued ? (video.queuedAt ?? now) : null,
@@ -440,16 +445,25 @@ class AppDatabase {
     await db.delete('local_videos', where: 'path = ?', whereArgs: [path]);
   }
 
-  Future<void> setKeywords(String videoId, List<String> keywords) async {
+  /// Caches the watch-page metadata. A `null` duration is stored as "fetched,
+  /// unknown" and never overwrites a duration coming from the player or an
+  /// imported link.
+  Future<void> setVideoMetadata(
+    String videoId, {
+    int? durationSeconds,
+    required List<String> keywords,
+  }) async {
     final db = await database;
-    await db.update(
-      'videos',
-      {
-        'keywords': jsonEncode(keywords),
-        'keywords_fetched': 1,
-      },
-      where: 'id = ?',
-      whereArgs: [videoId],
+    await db.rawUpdate(
+      '''
+      UPDATE videos
+      SET duration_seconds = COALESCE(?, duration_seconds),
+          duration_fetched = 1,
+          keywords = ?,
+          keywords_fetched = 1
+      WHERE id = ?
+      ''',
+      [durationSeconds, jsonEncode(keywords), videoId],
     );
   }
 
@@ -532,6 +546,7 @@ Future<void> _createSchema(Database db) async {
       published_at INTEGER NOT NULL,
       first_seen_at INTEGER,
       duration_seconds INTEGER,
+      duration_fetched INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'new',
       queued INTEGER NOT NULL DEFAULT 0,
       queued_at INTEGER,
@@ -708,5 +723,17 @@ Future<void> _migrate(Database db, int oldVersion, int newVersion) async {
         updated_at INTEGER NOT NULL
       )
     ''');
+  }
+  if (oldVersion < 10) {
+    await _addColumnIfMissing(
+      db,
+      'videos',
+      'duration_fetched',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await db.execute(
+      'UPDATE videos SET duration_fetched = 1 '
+      'WHERE duration_seconds IS NOT NULL AND duration_fetched = 0',
+    );
   }
 }

@@ -38,6 +38,7 @@ class VideoLinkService {
         description: video.description,
         publishedAt: published.millisecondsSinceEpoch,
         durationSeconds: video.duration?.inSeconds,
+        durationFetched: true,
         keywords: keywords,
         keywordsFetched: true,
         queued: true,

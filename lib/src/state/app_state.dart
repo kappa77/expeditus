@@ -19,7 +19,7 @@ import '../services/download_keep_alive.dart';
 import '../services/video_download_service.dart';
 import '../services/video_link_service.dart';
 import '../services/update_service.dart';
-import '../services/video_tags_service.dart';
+import '../services/video_metadata_service.dart';
 import '../util/app_version.dart';
 import '../util/platform.dart';
 import '../util/chapter_parser.dart';
@@ -43,7 +43,7 @@ class AppState extends ChangeNotifier {
     RssService? rss,
     YouTubeResolver? resolver,
     SponsorBlockService? sponsorBlock,
-    VideoTagsProvider? tags,
+    VideoMetadataProvider? metadata,
     VideoDownloader? downloader,
     VideoLinkService? videoLink,
     VideoChaptersProvider? chapterService,
@@ -54,7 +54,7 @@ class AppState extends ChangeNotifier {
   }) : rss = rss ?? RssService(),
        resolver = resolver ?? YouTubeResolver(),
        sponsorBlock = sponsorBlock ?? SponsorBlockService(),
-       tags = tags ?? VideoTagsService(),
+       metadata = metadata ?? VideoMetadataService(),
        downloader = downloader ?? VideoDownloadService(),
        videoLink = videoLink ?? VideoLinkService(),
        chapterService = chapterService ?? VideoChaptersService(),
@@ -69,7 +69,7 @@ class AppState extends ChangeNotifier {
   final RssService rss;
   final YouTubeResolver resolver;
   final SponsorBlockService sponsorBlock;
-  final VideoTagsProvider tags;
+  final VideoMetadataProvider metadata;
   final VideoDownloader downloader;
   final VideoLinkService videoLink;
   final VideoChaptersProvider chapterService;
@@ -144,6 +144,12 @@ class AppState extends ChangeNotifier {
   final Set<String> _seenInSession = {};
   final Set<String> _watchedInSession = {};
   final Set<String> _downloadsInProgress = {};
+  final Set<String> _metadataAttempted = {};
+  final List<VideoItem> _metadataQueue = [];
+  final Map<String, Future<VideoMetadata>> _metadataRequests = {};
+  int _metadataActive = 0;
+
+  static const int _metadataConcurrency = 3;
 
   int get newCount => latest.where((video) => video.isNew).length;
   int get queueCount => queueItems.length;
@@ -964,16 +970,105 @@ class AppState extends ChangeNotifier {
     return db.historyForChannel(channelId);
   }
 
-  /// Fetches tags for one video and caches them. Failures are non-fatal.
-  Future<VideoItem> fetchVideoTags(VideoItem video) async {
-    if (video.keywordsFetched) return video;
+  /// Fetches duration and tags for one video and caches them.
+  /// Failures are non-fatal and leave the row without metadata for this
+  /// session.
+  Future<VideoItem> fetchVideoMetadata(VideoItem video) async {
+    if (video.isLocal) return video;
+    if (video.durationFetched && video.keywordsFetched) return video;
     try {
-      final keywords = await tags.fetch(video.id);
-      await db.setKeywords(video.id, keywords);
-      return video.copyWith(keywords: keywords, keywordsFetched: true);
+      final result = await _metadataFor(video.id);
+      if (_disposed) return video;
+      await db.setVideoMetadata(
+        video.id,
+        durationSeconds: result.durationSeconds,
+        keywords: result.keywords,
+      );
+      return video.copyWith(
+        durationSeconds: result.durationSeconds,
+        durationFetched: true,
+        keywords: result.keywords,
+        keywordsFetched: true,
+      );
     } catch (_) {
       return video;
     }
+  }
+
+  /// Queues a lazy watch-page lookup for a row that is being shown in a list.
+  ///
+  /// The lookup is shared between the list and the channel page and limited to
+  /// [_metadataConcurrency] requests at a time. A failed lookup is not retried
+  /// for the rest of the session.
+  void requestVideoMetadata(VideoItem video) {
+    if (_disposed || video.isLocal) return;
+    if (video.durationFetched && video.keywordsFetched) return;
+    if (!_metadataAttempted.add(video.id)) return;
+    _metadataQueue.add(video);
+    _pumpMetadataQueue();
+  }
+
+  Future<VideoMetadata> _metadataFor(String videoId) {
+    final existing = _metadataRequests[videoId];
+    if (existing != null) return existing;
+
+    late final Future<VideoMetadata> request;
+    request = Future.sync(() => metadata.fetch(videoId)).whenComplete(() {
+      if (identical(_metadataRequests[videoId], request)) {
+        _metadataRequests.remove(videoId);
+      }
+    });
+    _metadataRequests[videoId] = request;
+    return request;
+  }
+
+  void _pumpMetadataQueue() {
+    while (!_disposed &&
+        _metadataActive < _metadataConcurrency &&
+        _metadataQueue.isNotEmpty) {
+      final video = _metadataQueue.removeAt(0);
+      _metadataActive++;
+      unawaited(_runMetadataFetch(video));
+    }
+  }
+
+  Future<void> _runMetadataFetch(VideoItem video) async {
+    try {
+      final updated = await fetchVideoMetadata(video);
+      if (_disposed) return;
+      final fetched = updated.durationFetched || updated.keywordsFetched;
+      if (fetched) _mergeMetadata(updated);
+    } finally {
+      _metadataActive--;
+      if (!_disposed) _pumpMetadataQueue();
+    }
+  }
+
+  /// Applies fetched metadata to the in-memory lists without reloading every
+  /// query. Only the metadata fields are merged, so a status change made while
+  /// the request was in flight is preserved.
+  void _mergeMetadata(VideoItem source) {
+    List<VideoItem> merge(List<VideoItem> items) {
+      return [
+        for (final item in items)
+          if (item.id == source.id)
+            item.copyWith(
+              durationSeconds: source.durationSeconds,
+              durationFetched: source.durationFetched,
+              keywords: source.keywords,
+              keywordsFetched: source.keywordsFetched,
+            )
+          else
+            item,
+      ];
+    }
+
+    latest = merge(latest);
+    queueItems = merge(queueItems);
+    saved = merge(saved);
+    rssHistory = merge(rssHistory);
+    _applyFilter();
+    _notify();
   }
 
   void _startTimer() {
@@ -1002,10 +1097,10 @@ class AppState extends ChangeNotifier {
     rss.close();
     resolver.close();
     sponsorBlock.close();
-    tags.close();
     downloader.close();
     videoLink.close();
     chapterService.close();
+    metadata.close();
     castController.dispose();
     super.dispose();
   }

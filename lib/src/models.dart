@@ -116,6 +116,7 @@ class VideoItem {
     required this.publishedAt,
     this.firstSeenAt,
     this.durationSeconds,
+    this.durationFetched = false,
     this.status = 'new',
     this.queued = false,
     this.queuedAt,
@@ -145,6 +146,10 @@ class VideoItem {
   final int? firstSeenAt;
 
   final int? durationSeconds;
+
+  /// True once a watch-page lookup has been attempted for the duration,
+  /// even when the video reports no length (for example a live stream).
+  final bool durationFetched;
 
   /// One of: new, seen, watched.
   final String status;
@@ -209,6 +214,7 @@ class VideoItem {
     int? publishedAt,
     int? firstSeenAt,
     int? durationSeconds,
+    bool? durationFetched,
     String? status,
     bool? queued,
     int? queuedAt,
@@ -233,6 +239,7 @@ class VideoItem {
       publishedAt: publishedAt ?? this.publishedAt,
       firstSeenAt: firstSeenAt ?? this.firstSeenAt,
       durationSeconds: durationSeconds ?? this.durationSeconds,
+      durationFetched: durationFetched ?? this.durationFetched,
       status: status ?? this.status,
       queued: queued ?? this.queued,
       queuedAt: queuedAt ?? this.queuedAt,
@@ -261,6 +268,7 @@ class VideoItem {
       firstSeenAt:
           (map['first_seen_at'] as int?) ?? (map['published_at'] as int?) ?? 0,
       durationSeconds: map['duration_seconds'] as int?,
+      durationFetched: (map['duration_fetched'] as int?) == 1,
       status: (map['status'] as String?) ?? 'new',
       queued: (map['queued'] as int?) == 1,
       queuedAt: map['queued_at'] as int?,

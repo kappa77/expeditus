@@ -19,6 +19,7 @@ class VideoRow extends StatefulWidget {
     this.onToggleQueued,
     this.onChannelTap,
     this.onRemove,
+    this.onNeedMetadata,
     this.showWatchLaterDate = false,
     this.showAddedDate = false,
   });
@@ -38,6 +39,10 @@ class VideoRow extends StatefulWidget {
   final VoidCallback? onChannelTap;
   final VoidCallback? onRemove;
 
+  /// Called once when the row is first shown if its duration or tags have not
+  /// been cached yet. The parent decides how to fetch and deduplicate them.
+  final VoidCallback? onNeedMetadata;
+
   /// Shows when the video was saved instead of when it was published.
   final bool showWatchLaterDate;
 
@@ -50,6 +55,18 @@ class VideoRow extends StatefulWidget {
 
 class _VideoRowState extends State<VideoRow> {
   bool _hovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final video = widget.video;
+    final callback = widget.onNeedMetadata;
+    if (callback == null || video.isLocal) return;
+    if (video.durationFetched && video.keywordsFetched) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) callback();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

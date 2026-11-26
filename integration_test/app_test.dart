@@ -11,7 +11,7 @@ import 'package:expeditus/src/services/rss_service.dart';
 import 'package:expeditus/src/services/sponsorblock_service.dart';
 import 'package:expeditus/src/services/video_download_service.dart';
 import 'package:expeditus/src/services/update_service.dart';
-import 'package:expeditus/src/services/video_tags_service.dart';
+import 'package:expeditus/src/services/video_metadata_service.dart';
 import 'package:expeditus/src/state/app_state.dart';
 import 'package:expeditus/src/util/app_version.dart';
 import 'package:integration_test/integration_test.dart';
@@ -64,6 +64,13 @@ void main() {
     expect(find.text('Video A due'), findsOneWidget);
     expect(find.text('Video B uno'), findsOneWidget);
     expect(find.text('Video A uno'), findsNothing);
+
+    // The duration comes from the lazy watch-page lookup.
+    await _pumpUntil(
+      tester,
+      () => find.text('2:12').evaluate().isNotEmpty,
+      reason: 'la durata deve comparire nel feed',
+    );
 
     // RSS history keeps every feed video once, even after a refresh.
     expect(harness.state.rssHistoryCount, 3);
@@ -231,6 +238,7 @@ void main() {
       reason: 'i tag del video devono comparire',
     );
     expect(find.text('news'), findsOneWidget);
+    expect(find.text('12:34'), findsOneWidget);
 
     // Term filter, including tags.
     await tester.enterText(
@@ -588,7 +596,7 @@ class _Harness {
       rss: RssService(client: client),
       resolver: YouTubeResolver(client: client),
       sponsorBlock: SponsorBlockService(client: client),
-      tags: _FakeTags(),
+      metadata: _FakeMetadata(),
       downloader: _FakeDownloader(
         Directory(p.join(temp.path, 'downloads')),
       ),
@@ -798,16 +806,22 @@ AppRelease _updateRelease(String tag) {
   return AppRelease.fromJson(json)!;
 }
 
-class _FakeTags implements VideoTagsProvider {
+class _FakeMetadata implements VideoMetadataProvider {
   @override
-  Future<List<String>> fetch(String videoId) async {
+  Future<VideoMetadata> fetch(String videoId) async {
     switch (videoId) {
       case 'aa1':
-        return const ['demo', 'storia'];
+        return const VideoMetadata(
+          durationSeconds: 754,
+          keywords: ['demo', 'storia'],
+        );
       case 'aa2':
-        return const ['news'];
+        return const VideoMetadata(
+          durationSeconds: 132,
+          keywords: ['news'],
+        );
       default:
-        return const [];
+        return const VideoMetadata(keywords: []);
     }
   }
 

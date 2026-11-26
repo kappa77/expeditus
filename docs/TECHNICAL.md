@@ -8,7 +8,7 @@ Expeditus is a Flutter application for Windows desktop and Android. It turns a s
 
 - one latest upload per channel;
 - a per-channel archive of recent uploads;
-- local search, status filters, tags, an explicit Watch later list, and watch state;
+- local search, status filters, durations, tags, an explicit Watch later list, and watch state;
 - a separate library of local MP4 files, with titles from metadata or the file name;
 - playback through direct media streams instead of the YouTube player;
 - optional SponsorBlock skipping.
@@ -43,7 +43,7 @@ Key modules:
 | `lib/src/services/rss_service.dart` | YouTube Atom feed parsing |
 | `lib/src/services/import_service.dart` | Google Takeout CSV and channel handle/URL resolution |
 | `lib/src/services/channel_search_service.dart` | YouTube channel search by keyword |
-| `lib/src/services/video_tags_service.dart` | Lazy `videoDetails.keywords` fetch |
+| `lib/src/services/video_metadata_service.dart` | Lazy duration and `videoDetails.keywords` fetch |
 | `lib/src/services/video_chapters_service.dart` | Full-description chapter fetch |
 | `lib/src/services/video_download_service.dart` | Muxed-stream download to the local app data folder |
 | `lib/src/services/video_link_service.dart` | Resolve a video URL and its channel |
@@ -86,9 +86,9 @@ The feed contains the latest 15 uploads with title, description, publication tim
 
 Channel search uses YouTube's public search page through `youtube_explode_dart`, filtered to channels. It needs no API key but depends on YouTube's page structure. Results show the channel name and description; adding a channel fetches only that channel's RSS feed.
 
-### Tags
+### Durations and tags
 
-YouTube tags live in `videoDetails.keywords`, which is not present in the RSS feed. Expeditus fetches them lazily, one watch page per video, with limited concurrency, and caches the result in SQLite. A successful fetch with no keywords is cached as "fetched, empty" to avoid repeating the request. Many channels do not publish keywords.
+The RSS feed does not include the video length or the YouTube tags. Both live on the public watch page, so Expeditus fetches them together, one request per video, and caches the result in SQLite. The lookup starts when a row is shown in a list, with at most three concurrent requests in the shared list queue, and is also used by the channel page. A successful fetch is cached as "fetched" even when the duration is unknown (for example on a live stream) or the video has no keywords, so the request is not repeated. Existing durations from imported links or the player are never overwritten with an empty value.
 
 ## Storage
 
@@ -97,13 +97,13 @@ SQLite database: `expeditus.sqlite`, in the application support directory.
 Tables:
 
 - `channels`: id, title, handle, added time, last check, RSS-muted flag, show-in-latest flag, optional default playback rate, last error.
-- `videos`: id, channel, title, description, publication time, first-seen time, duration, status, watch-later flag, watch-later save time, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
+- `videos`: id, channel, title, description, publication time, first-seen time, duration, duration-fetch flag, status, watch-later flag, watch-later save time, progress, fetch time, keywords JSON, tag-fetch flag, watched-at, local download path/status/time/error, chapters JSON, chapter-fetch flag, source (`rss`/`link`).
 - `local_videos`: path, title, added time, duration.
 - `audio_loudness`: local-file cache key, gated RMS dBFS, absolute peak dBFS, update time.
 - `bookmarks`: id, video id, position seconds, personal note, creation time.
 - `settings`: refresh interval, SponsorBlock options, playback rate, layout options.
 
-Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. Version 8 added the `local_videos` table. Version 9 added the `audio_loudness` cache. All migrations are idempotent.
+Database version 2 added `keywords` and `keywords_fetched`. Version 3 added `watched_at`, `local_path`, `download_status`, `downloaded_at`, and `download_error`. Version 4 added `channels.show_in_latest`, defaulting to 1. Version 5 added `channels.default_playback_rate`, `videos.chapters`, `videos.chapters_fetched`, and the `bookmarks` table. Version 6 added `videos.first_seen_at` and `videos.source`, and backfilled first-seen times from the previous fetch timestamp. Version 7 added `videos.queued_at` and backfilled it for existing saved videos. Version 8 added the `local_videos` table. Version 9 added the `audio_loudness` cache. Version 10 added `videos.duration_fetched` and backfilled it for rows that already had a known duration. All migrations are idempotent.
 
 Migrations are idempotent: tables and indexes are created with `IF NOT EXISTS`, every added column is checked with `PRAGMA table_info` before the `ALTER TABLE`, and backfills only update rows whose value is still `NULL`. An interrupted or partially applied upgrade can therefore be retried safely without "duplicate column name" or "table already exists" errors.
 
@@ -473,8 +473,8 @@ The app footer reads `kAppVersion` from `lib/src/version.dart`, with a developme
 flutter test
 
 # Deterministic desktop E2E: onboarding, import, feed, channel archive/history,
-# tags, filters, offline download, chapters/bookmarks, per-channel speed,
-# refresh-only-channel, player error
+# durations/tags, filters, offline download, chapters/bookmarks, per-channel
+# speed, refresh-only-channel, player error
 flutter test integration_test -d windows
 
 # Live network E2E: @antirez feed, channel search, video link + auto-subscribe
@@ -498,7 +498,7 @@ video restarting.
 
 - RSS exposes at most 15 uploads per channel. Deeper history needs the YouTube Data API, yt-dlp, or another extractor.
 - The fallback muxed stream is usually 360p; HLS is preferred when available, up to 720p on Android. Available quality depends on the extracted manifest. When no muxed/HLS stream exists, a video-only rendition is combined with the preferred original audio track through mpv. Downloads still use muxed streams only.
-- Tags are not available for every video and cost one watch-page request per uncached video.
+- Durations and tags are not available for every video and cost one watch-page request per uncached video.
 - Offline downloads use muxed streams, usually 360p, and do not support resume, cancellation, or a download queue.
 - Local MP4 files must remain at the path where they were added; the library stores the path, not a copy.
 - RSS history keeps one row per video id; it is not a log of every feed refresh. The current feed view still shows only the latest entry per channel.

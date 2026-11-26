@@ -279,6 +279,48 @@ void main() {
     expect(saved.peakDb, -2.5);
   });
 
+  test('da v9 a v10 aggiunge lo stato di recupero durata', () async {
+    final path = p.join(temp.path, 'v9.sqlite');
+    final legacy = await _createLegacyDb(
+      path,
+      version: 9,
+      channelsSql: _v6ChannelsSql,
+      videosSql: _v6VideosSql(includeQueuedAt: true),
+    );
+    await legacy.insert('channels', _channelRow());
+    await legacy.insert('videos', {..._videoRow(), 'duration_seconds': 540});
+    await legacy.insert('videos', {
+      ..._videoRow(),
+      'id': 'a2',
+      'queued': 0,
+      'queued_at': null,
+    });
+    await legacy.close();
+
+    final upgraded = AppDatabase(pathOverride: path);
+    addTearDown(upgraded.close);
+    await upgraded.open();
+
+    final videos = await upgraded.videosForChannel('c1');
+    expect(
+      videos.singleWhere((video) => video.id == 'a1').durationSeconds,
+      540,
+    );
+    expect(
+      videos.singleWhere((video) => video.id == 'a1').durationFetched,
+      isTrue,
+    );
+    expect(
+      videos.singleWhere((video) => video.id == 'a2').durationFetched,
+      isFalse,
+    );
+
+    await upgraded.close();
+    final raw = await databaseFactoryFfi.openDatabase(path);
+    addTearDown(raw.close);
+    expect(await _columns(raw, 'videos'), contains('duration_fetched'));
+  });
+
   test('migrazioni parziali da v1 completano lo schema senza errori', () async {
     final path = p.join(temp.path, 'v1_partial.sqlite');
     final legacy = await _createLegacyDb(
@@ -322,6 +364,7 @@ void main() {
         'published_at',
         'first_seen_at',
         'duration_seconds',
+        'duration_fetched',
         'status',
         'queued',
         'queued_at',

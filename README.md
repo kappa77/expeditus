@@ -4,7 +4,7 @@
 
 **A quiet, text-first inbox for your YouTube subscriptions.**
 
-Expeditus shows only the latest upload from each channel you follow. No algorithmic home, no recommendations, no autoplay, no thumbnails in the feed. Just the channel, the title, a short description, and when it was published.
+Expeditus shows only the latest upload from each channel you follow. No algorithmic home, no recommendations, no autoplay, no thumbnails in the feed. Just the channel, the title, a short description, the video length, and when it was published.
 
 ## Why Expeditus
 
@@ -15,6 +15,7 @@ One row per channel. The latest video. That is the whole feed.
 ## Features
 
 - **One latest video per channel**, in reverse chronological order.
+- **Video length in every list:** the duration is read lazily from YouTube's public watch page, shown in each row, and cached locally so it appears immediately the next time.
 - **No recommendations, no autoplay, no thumbnails in the feed, no Shorts feed noise.**
 - **Import your subscriptions** from Google Takeout, paste channel handles or URLs, or search YouTube by keyword.
 - **Channel page with two tabs:** the recent archive and the channel history, with filters, search, tags, and offline downloads.
